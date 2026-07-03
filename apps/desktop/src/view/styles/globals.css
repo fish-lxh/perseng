@@ -1,0 +1,418 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+@theme {
+    /* ===== 字体配置(机械感主题 · Orbitron 细线) =====
+       全栈统一 Orbitron(细线体 400),区分场景如下:
+       - font-display:        Orbitron —— 标题 / Logo / 主装饰
+       - font-display-thin:   Orbitron 细线 —— 主标题 / AGENTX / 主装饰
+       - font-mono:           Orbitron —— 标签 / 数字 / 终端感文字
+       - font-code:           JetBrains Mono —— 代码块 / 文件路径(等宽技术感)
+       - font-sans:           Noto Sans SC —— 中文正文(回退后兜底)
+    */
+    --font-display: 'Orbitron', monospace;
+    --font-display-thin: 'Orbitron', monospace;
+    --font-mono: 'Orbitron', monospace;
+    --font-code: 'JetBrains Mono', 'Orbitron', monospace;
+    --font-sans: 'Noto Sans SC', 'Orbitron', sans-serif;
+
+    /* ===== Cyberpunk 主题色板(由 cyber-perseng.html 复刻) ===== */
+    --color-background: #050a14;
+    --color-foreground: #e0f2fe;
+    --color-card: #0a1120;
+    --color-card-foreground: #e0f2fe;
+    --color-popover: #0a1120;
+    --color-popover-foreground: #e0f2fe;
+    --color-primary: #00f0ff;
+    --color-primary-foreground: #050a14;
+    --color-secondary: #111b2e;
+    --color-secondary-foreground: #e0f2fe;
+    --color-muted: #111b2e;
+    --color-muted-foreground: #7aa2c8;
+    --color-accent: #111b2e;
+    --color-accent-foreground: #00f0ff;
+    --color-destructive: #ff00a0;
+    --color-destructive-foreground: #ffffff;
+    --color-border: #1e3a5f;
+    --color-input: #0a1120;
+    --color-ring: #00f0ff;
+}
+
+:root {
+    /* sidebar 相关变量改成 cyber 色板,与上面的 token 一致 */
+    --sidebar: #0a1120;
+    --sidebar-foreground: #e0f2fe;
+    --sidebar-primary: #00f0ff;
+    --sidebar-primary-foreground: #050a14;
+    --sidebar-accent: #111b2e;
+    --sidebar-accent-foreground: #e0f2fe;
+    --sidebar-border: #1e3a5f;
+    --sidebar-ring: #00f0ff;
+}
+
+@theme inline {
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    body {
+        /* 不直接铺平 cyber-bg,而是用 radial + 1px 横条叠加,更贴近原型氛围 */
+        background:
+            radial-gradient(circle at 20% 20%, #0a1a2f 0%, #050a14 60%),
+            linear-gradient(180deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+        background-size: 100% 100%, 100% 3px;
+        color: #e0f2fe;
+        font-family: var(--font-sans);
+        -webkit-tap-highlight-color: transparent;
+    }
+}
+
+@layer utilities {
+    /* ===== Orbitron 字体 utility(细线 / 常规 / 等宽) =====
+       使用 token 统一管理。 */
+    .font-display {
+        font-family: var(--font-display);
+        font-weight: 400;
+        letter-spacing: 0.05em;
+    }
+    /* 细线 Orbitron:用于主标题(AGENTX / PROMPTX 等)
+       weight 400 + 大字距 + 关闭内置粗体,呈现纤细几何线感。 */
+    .font-display-thin {
+        font-family: var(--font-display-thin);
+        font-weight: 400;
+        letter-spacing: 0.18em;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+    .font-mono {
+        font-family: var(--font-mono);
+        font-weight: 400;
+        letter-spacing: 0.06em;
+    }
+    .font-code {
+        font-family: var(--font-code);
+        font-weight: 400;
+        letter-spacing: 0;
+    }
+
+    .app-drag {
+        -webkit-app-region: drag;
+    }
+
+    .app-no-drag {
+        -webkit-app-region: no-drag;
+    }
+
+    /* ===== 文字霓虹 ===== */
+    .text-glow-cyan {
+        text-shadow: 0 0 6px rgba(0, 240, 255, 0.6);
+    }
+    .text-glow-magenta {
+        text-shadow: 0 0 6px rgba(255, 0, 160, 0.6);
+    }
+    .text-glow-yellow {
+        text-shadow: 0 0 6px rgba(255, 230, 0, 0.6);
+    }
+
+    /* ===== 霓虹 box-shadow ===== */
+    .shadow-neon-cyan {
+        box-shadow:
+            0 0 8px rgba(0, 240, 255, 0.45),
+            0 0 20px rgba(0, 240, 255, 0.2);
+    }
+    .shadow-neon-magenta {
+        box-shadow:
+            0 0 8px rgba(255, 0, 160, 0.45),
+            0 0 20px rgba(255, 0, 160, 0.2);
+    }
+    .shadow-neon-panel {
+        box-shadow:
+            0 0 0 1px rgba(0, 240, 255, 0.12),
+            inset 0 0 40px rgba(0, 240, 255, 0.03);
+    }
+
+    /* ===== Pulse / Flicker / Scan 动画 ===== */
+    @keyframes scan {
+        0% {
+            transform: translateY(-120px);
+        }
+        100% {
+            transform: translateY(100vh);
+        }
+    }
+    @keyframes pulseGlow {
+        0%, 100% {
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+        }
+        50% {
+            box-shadow: 0 0 24px rgba(0, 240, 255, 0.6);
+        }
+    }
+    @keyframes flicker {
+        0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% {
+            opacity: 1;
+        }
+        20%, 24%, 55% {
+            opacity: 0.4;
+        }
+    }
+
+    .animate-pulse-glow {
+        animation: pulseGlow 3s ease-in-out infinite;
+    }
+    .animate-flicker {
+        animation: flicker 4s infinite;
+    }
+
+    /* ===== 全屏扫描线(极淡青色 1px 横条重复) ===== */
+    .scanline {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: repeating-linear-gradient(
+            0deg,
+            rgba(0, 240, 255, 0.015) 0px,
+            transparent 1px,
+            transparent 2px,
+            rgba(0, 240, 255, 0.015) 3px
+        );
+        pointer-events: none;
+        z-index: 50;
+    }
+
+    /* ===== 顶部移动光带 ===== */
+    .scanbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 120px;
+        background: linear-gradient(
+            180deg,
+            transparent,
+            rgba(0, 240, 255, 0.06),
+            transparent
+        );
+        pointer-events: none;
+        z-index: 51;
+        animation: scan 6s linear infinite;
+    }
+
+    /* ===== 渐变描边面板 ===== */
+    .cyber-border {
+        position: relative;
+        background: rgba(10, 17, 32, 0.85);
+        border: 1px solid rgba(0, 240, 255, 0.2);
+        box-shadow:
+            inset 0 0 30px rgba(0, 240, 255, 0.03),
+            0 0 0 1px rgba(0, 240, 255, 0.08);
+    }
+    .cyber-border::before {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        padding: 1px;
+        background: linear-gradient(
+            135deg,
+            rgba(0, 240, 255, 0.6),
+            transparent 40%,
+            transparent 60%,
+            rgba(255, 0, 160, 0.5)
+        );
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        pointer-events: none;
+    }
+
+    /* ===== 四角点缀 ===== */
+    .cyber-corner {
+        position: relative;
+    }
+    .cyber-corner::after {
+        content: '';
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border: 2px solid #00f0ff;
+        transition: all 0.2s ease;
+    }
+    .cyber-corner.tl::after {
+        top: -1px;
+        left: -1px;
+        border-right: none;
+        border-bottom: none;
+    }
+    .cyber-corner.tr::after {
+        top: -1px;
+        right: -1px;
+        border-left: none;
+        border-bottom: none;
+    }
+    .cyber-corner.bl::after {
+        bottom: -1px;
+        left: -1px;
+        border-right: none;
+        border-top: none;
+    }
+    .cyber-corner.br::after {
+        bottom: -1px;
+        right: -1px;
+        border-left: none;
+        border-top: none;
+    }
+
+    /* ===== 自定义滚动条(Webkit / Chromium / Electron) ===== */
+    ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+        background: #0a1120;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #1e3a5f;
+        border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #00f0ff;
+    }
+
+    /* ===== 全局禁用按钮反白 / 用户不可选 / 失焦 ===== */
+    button,
+    a,
+    [role="button"],
+    input,
+    textarea {
+        outline: none;
+        -webkit-tap-highlight-color: transparent;
+    }
+    button,
+    a,
+    [role="button"] {
+        user-select: none;
+        -webkit-user-select: none;
+    }
+    button::-moz-focus-inner {
+        border: 0;
+    }
+
+    /* ===== 强制去除所有按钮反白 / 高亮 ===== */
+    button,
+    [type="button"],
+    [type="reset"],
+    [type="submit"],
+    [role="button"],
+    a,
+    label {
+        -webkit-appearance: none;
+        appearance: none;
+        -webkit-tap-highlight-color: transparent !important;
+        -webkit-user-select: none !important;
+        user-select: none !important;
+        outline: none !important;
+    }
+    button::-moz-focus-inner {
+        border: 0 !important;
+    }
+    button:focus,
+    button:active,
+    [type="button"]:focus,
+    [type="button"]:active,
+    [role="button"]:focus,
+    [role="button"]:active,
+    a:focus,
+    a:active,
+    label:focus,
+    label:active {
+        outline: none !important;
+        -webkit-tap-highlight-color: transparent !important;
+    }
+
+    /* ===== 保留原 scrollbar-hide ===== */
+    .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+    .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+    }
+
+    /* ===========================================================
+       战国时期底纹(回纹 / 云雷纹 / 饕餮纹 / 青铜器纹)
+       都用 currentColor 描边,以主题色为主,
+       颜色叠加在主背景之上、扫描线之下,营造青铜器纹饰氛围。
+       =========================================================== */
+
+    /* ---- 回纹(Meander / Greek key)----
+       连续方折线条,战国土木青铜器最经典纹饰。 */
+    .bg-pattern-meander {
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='24' viewBox='0 0 48 24'><g fill='none' stroke='%2300f0ff' stroke-width='1' opacity='0.22'><path d='M2 4 H18 V20 H30 V4 H46 V12 H38 V20 H46 M18 4 V12 H10 V20 H2 V12 H10 V4 Z'/></g></svg>");
+        background-repeat: repeat;
+    }
+    .bg-pattern-meander-magenta {
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='24' viewBox='0 0 48 24'><g fill='none' stroke='%23ff00a0' stroke-width='1' opacity='0.18'><path d='M2 4 H18 V20 H30 V4 H46 V12 H38 V20 H46 M18 4 V12 H10 V20 H2 V12 H10 V4 Z'/></g></svg>");
+        background-repeat: repeat;
+    }
+
+    /* ---- 云雷纹(Cloud-thunder)----
+       圆点 + 卷云曲线,战国土木漆器经典云气纹。 */
+    .bg-pattern-cloudthunder {
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'><g fill='none' stroke='%2300f0ff' stroke-width='1' opacity='0.22'><circle cx='14' cy='14' r='3'/><circle cx='42' cy='14' r='3'/><circle cx='14' cy='42' r='3'/><circle cx='42' cy='42' r='3'/><path d='M14 17 Q28 22 42 17 M14 39 Q28 34 42 39 M17 14 Q22 28 17 42 M39 14 Q34 28 39 42'/></g></svg>");
+        background-repeat: repeat;
+    }
+
+    /* ---- 饕餮纹(Taotie mask)----
+       战汉青铜器兽面纹:对称双目 + 简化兽角轮廓。 */
+    .bg-pattern-taotie {
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'><g fill='none' stroke='%2300f0ff' stroke-width='1.2' opacity='0.18'><circle cx='40' cy='55' r='8'/><circle cx='80' cy='55' r='8'/><path d='M22 28 Q30 12 45 22 M98 28 Q90 12 75 22 M48 55 V75 M72 55 V75 M40 75 Q60 92 80 75'/><path d='M28 95 H92'/></g></svg>");
+        background-repeat: repeat;
+    }
+
+    /* ---- 青铜器网格 + 圆点 ----
+       细网格 + 节点圆点,呼应青铜器表面钉铆装饰。 */
+    .bg-pattern-bronze {
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'><g fill='none' stroke='%2300f0ff' stroke-width='0.6' opacity='0.18'><path d='M0 0.5 H32 M0.5 0 V32'/><circle cx='0.5' cy='0.5' r='1.2' fill='%2300f0ff' stroke='none'/></g></svg>");
+        background-repeat: repeat;
+    }
+
+    /* ---- 边角回纹(top / bottom 装饰条) ---- */
+    .border-pattern-meander-top {
+        position: relative;
+    }
+    .border-pattern-meander-top::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 8px;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8'><g fill='none' stroke='%2300f0ff' stroke-width='1' opacity='0.4'><path d='M2 1 H18 V7 H30 V1 H46 M18 1 V4 H30 M2 4 H10 M38 4 H46'/></g></svg>");
+        background-repeat: repeat-x;
+        pointer-events: none;
+    }
+
+    /* ---- 通用底纹容器:
+         .bg-warring-states 同时叠加回纹 + 青铜网格(双层) */
+    .bg-warring-states {
+        background-color: transparent;
+        background-image:
+            url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='24' viewBox='0 0 48 24'><g fill='none' stroke='%2300f0ff' stroke-width='0.8' opacity='0.12'><path d='M2 4 H18 V20 H30 V4 H46 V12 H38 V20 H46 M18 4 V12 H10 V20 H2 V12 H10 V4 Z'/></g></svg>"),
+            url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'><g fill='none' stroke='%2300f0ff' stroke-width='0.5' opacity='0.08'><path d='M0 0.5 H32 M0.5 0 V32'/></g></svg>");
+        background-repeat: repeat, repeat;
+    }
+}

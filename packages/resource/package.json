@@ -1,0 +1,42 @@
+{
+  "name": "@promptx/resource",
+  "version": "2.4.1",
+  "description": "Perseng resource templates and prompt definitions",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./registry": "./dist/registry.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "discover": "node scripts/generate-registry.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server-filesystem": "^2026.1.14",
+    "@promptx/logger": "workspace:*",
+    "glob": "^13.0.6",
+    "minimatch": "^10.2.5",
+    "semver": "^7.8.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "keywords": [
+    "promptx",
+    "dpml",
+    "prompt",
+    "template",
+    "resource",
+    "ai"
+  ]
+}

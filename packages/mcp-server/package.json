@@ -1,0 +1,52 @@
+{
+  "name": "@promptx/mcp-server",
+  "version": "2.4.1",
+  "description": "MCP Server implementation for Perseng",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./timeline": {
+      "import": "./dist/timeline/index.js",
+      "types": "./dist/timeline/index.d.ts"
+    }
+  },
+  "bin": {
+    "mcp-server": "./dist/mcp-server.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rimraf dist",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.10.0",
+    "@promptx/config": "workspace:*",
+    "@promptx/core": "workspace:*",
+    "@promptx/logger": "workspace:*",
+    "chalk": "^5.6.2",
+    "commander": "^12.1.0",
+    "express": "^4.22.2",
+    "js-yaml": "^4.1.1",
+    "workerpool": "^9.3.4",
+    "zod": "^3.25.76"
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9"
+  }
+}

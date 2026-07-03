@@ -1,0 +1,537 @@
+name: Build and Release Desktop Apps
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # ============================================
+  # 第1阶段：并行构建所有平台
+  # ============================================
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Configure git for HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git config --global url."https://".insteadOf "ssh://"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Import Code-Signing Certificates
+        uses: Apple-Actions/import-codesign-certs@v2
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERTIFICATE }}
+          p12-password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+
+      - name: Build macOS app
+        working-directory: apps/desktop
+        run: |
+          echo "Building macOS versions..."
+          pnpm build
+          npx electron-builder --mac --x64 --arm64 --publish never
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: true
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS artifacts for signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-unsigned
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 1
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Configure git for HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git config --global url."https://".insteadOf "ssh://"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Build Windows app
+        working-directory: apps/desktop
+        run: |
+          pnpm build
+          npx electron-builder --win --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows artifacts for signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-unsigned
+          path: |
+            apps/desktop/release/*setup*.exe
+            apps/desktop/release/latest.yml
+          if-no-files-found: error
+          retention-days: 1
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Configure git for HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git config --global url."https://".insteadOf "ssh://"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Build Linux app
+        working-directory: apps/desktop
+        run: |
+          pnpm build
+          npx electron-builder --linux --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifacts (no signing needed)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-final
+          path: |
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.rpm
+            apps/desktop/release/latest-linux.yml
+          if-no-files-found: error
+          retention-days: 1
+
+  # ============================================
+  # 第2阶段：签名和公证
+  # ============================================
+  sign-macos:
+    name: Notarize macOS
+    needs: build-macos
+    runs-on: macos-latest
+    if: success()
+    steps:
+      - name: Check Apple credentials
+        id: check_credentials
+        run: |
+          if [[ -z "${{ secrets.APPLE_ID }}" ]] || \
+             [[ -z "${{ secrets.APPLE_ID_PASSWORD }}" ]] || \
+             [[ -z "${{ secrets.APPLE_TEAM_ID }}" ]]; then
+            echo "Missing Apple credentials, skipping notarization"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Apple credentials found"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download macOS artifacts
+        if: steps.check_credentials.outputs.skip != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-unsigned
+          path: macos-files
+
+      - name: Submit for notarization
+        if: steps.check_credentials.outputs.skip != 'true'
+        id: submit
+        run: |
+          cd macos-files
+          submission_info=""
+
+          for dmg in *.dmg; do
+            if [ -f "$dmg" ]; then
+              echo "=========================================="
+              echo "📦 Processing: $dmg"
+              echo "📊 File size: $(ls -lh "$dmg" | awk '{print $5}')"
+              echo "=========================================="
+
+              echo "🚀 Submitting $dmg for notarization..."
+              echo "   Apple ID: ${{ secrets.APPLE_ID }}"
+              echo "   Team ID: ${{ secrets.APPLE_TEAM_ID }}"
+
+              # 提交公证 - 添加详细输出
+              set +e  # 不立即退出
+              output=$(xcrun notarytool submit "$dmg" \
+                --apple-id "${{ secrets.APPLE_ID }}" \
+                --password "${{ secrets.APPLE_ID_PASSWORD }}" \
+                --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+                --wait 2>&1)
+              exit_code=$?
+              set -e
+
+              echo "📋 Notarization output:"
+              echo "$output"
+              echo ""
+              echo "Exit code: $exit_code"
+
+              # 检查公证状态
+              if [ $exit_code -eq 0 ] && echo "$output" | grep -q "Accepted"; then
+                echo "✅ Notarization accepted for $dmg"
+
+                # Staple the ticket
+                echo "🔖 Stapling ticket to $dmg..."
+                xcrun stapler staple "$dmg"
+                echo "✅ Successfully stapled $dmg"
+              else
+                echo "❌ Notarization failed for $dmg"
+                echo "Full output above ⬆️"
+
+                # Extract submission ID if available
+                submission_id=$(echo "$output" | grep -o 'id: [a-f0-9-]*' | head -1 | cut -d' ' -f2)
+                if [ -n "$submission_id" ]; then
+                  echo "📝 Submission ID: $submission_id"
+                  echo "Fetching detailed log..."
+                  xcrun notarytool log "$submission_id" \
+                    --apple-id "${{ secrets.APPLE_ID }}" \
+                    --password "${{ secrets.APPLE_ID_PASSWORD }}" \
+                    --team-id "${{ secrets.APPLE_TEAM_ID }}" || true
+                fi
+
+                exit 1
+              fi
+            fi
+          done
+
+      - name: Upload notarized macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-final
+          path: |
+            macos-files/*.dmg
+            macos-files/*.zip
+            macos-files/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 1
+
+  sign-windows:
+    name: Sign Windows with SignPath
+    needs: build-windows
+    runs-on: ubuntu-latest
+    if: success()
+    permissions:
+      id-token: write
+    steps:
+      - name: Check SignPath credentials
+        id: check_credentials
+        run: |
+          if [[ -z "${{ secrets.SIGNPATH_ORGANIZATION_ID }}" ]] || \
+             [[ -z "${{ secrets.SIGNPATH_PROJECT_SLUG }}" ]] || \
+             [[ -z "${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}" ]]; then
+            echo "Missing SignPath credentials, skipping signing"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "SignPath credentials found"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-unsigned
+          path: windows-files
+
+      - name: Upload installer for SignPath
+        if: steps.check_credentials.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        id: upload-for-signing
+        with:
+          name: windows-installer-to-sign
+          path: windows-files/*setup*.exe
+          if-no-files-found: error
+
+      - name: Sign with SignPath
+        if: steps.check_credentials.outputs.skip != 'true'
+        uses: SignPath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ secrets.SIGNPATH_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-for-signing.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 86400  # 24 hours
+          output-artifact-directory: signed
+
+      - name: Generate latest.yml for signed installer
+        if: steps.check_credentials.outputs.skip != 'true'
+        run: |
+          cd signed
+
+          # 获取签名后的文件
+          signed_exe=$(ls *.exe | head -1)
+          if [ -z "$signed_exe" ]; then
+            echo "No signed exe found, using unsigned"
+            cd ../windows-files
+            signed_exe=$(ls *setup*.exe | head -1)
+          fi
+
+          echo "Generating latest.yml for $signed_exe..."
+
+          # 计算 SHA512 - 确保单行输出，移除所有换行符
+          sha512_hash=$(sha512sum "$signed_exe" | awk '{print $1}' | xxd -r -p | base64 | tr -d '\n')
+
+          # 获取文件大小
+          file_size=$(stat -c%s "$signed_exe" 2>/dev/null || stat -f%z "$signed_exe" 2>/dev/null)
+
+          # 从文件名提取版本号
+          version=$(echo "$signed_exe" | sed -E 's/perseng-desktop-([0-9.]+)-.*/\1/')
+
+          # 获取发布日期
+          release_date=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+
+          # 创建 latest.yml - 使用双引号包裹 sha512 确保单行
+          printf "version: %s\nfiles:\n  - url: %s\n    sha512: \"%s\"\n    size: %s\npath: %s\nsha512: \"%s\"\nreleaseDate: '%s'\n" \
+            "${version}" "${signed_exe}" "${sha512_hash}" "${file_size}" \
+            "${signed_exe}" "${sha512_hash}" "${release_date}" > latest.yml
+
+          # 验证生成的 YAML 格式
+          echo "Generated latest.yml:"
+          cat latest.yml
+
+          # 验证 YAML 语法
+          if command -v python3 &> /dev/null; then
+            python3 -c "import yaml; yaml.safe_load(open('latest.yml'))" && echo "✅ YAML syntax valid" || echo "❌ YAML syntax invalid"
+          fi
+
+          # 将签名的文件移回主目录
+          if [ -f "$signed_exe" ] && [ "$(pwd)" = "*/signed" ]; then
+            mv "$signed_exe" ../windows-files/
+            mv latest.yml ../windows-files/
+            cd ../windows-files
+          fi
+
+      - name: Prepare final Windows artifacts
+        if: steps.check_credentials.outputs.skip != 'true'
+        run: |
+          mkdir -p windows-final-files
+
+          # 复制签名后的文件
+          if [ -d "signed" ] && [ -n "$(ls -A signed/*.exe 2>/dev/null)" ]; then
+            echo "Using signed files"
+            cp signed/*.exe windows-final-files/
+            cp signed/latest.yml windows-final-files/ || true
+          else
+            echo "Using original files (signing might have been skipped)"
+            cp windows-files/*setup*.exe windows-final-files/
+            cp windows-files/latest.yml windows-final-files/ || true
+          fi
+
+          echo "Final Windows files:"
+          ls -la windows-final-files/
+
+      - name: Upload signed Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-final
+          path: windows-final-files/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ============================================
+  # 第3阶段：统一上传到 GitHub Release
+  # ============================================
+  upload-release:
+    name: Upload to GitHub Release
+    needs: [sign-macos, sign-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: success()
+    permissions:
+      contents: write
+    steps:
+      - name: Download all final artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Prepare release files
+        run: |
+          # 创建发布目录
+          mkdir -p release-files
+
+          # 移动所有文件到发布目录
+          if [ -d "macos-final" ]; then
+            mv macos-final/* release-files/ || true
+          fi
+
+          if [ -d "windows-final" ]; then
+            mv windows-final/* release-files/ || true
+          fi
+
+          if [ -d "linux-final" ]; then
+            mv linux-final/* release-files/ || true
+          fi
+
+          # 列出所有要发布的文件
+          echo "Files to release:"
+          ls -la release-files/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+          files: release-files/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release files as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: release-files/*
+          retention-days: 1
+
+      - name: Summary
+        run: |
+          echo "## 🎉 Desktop Apps Released Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Release: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Completed Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS: Built and Notarized" >> $GITHUB_STEP_SUMMARY
+          echo "- Windows: Built and Signed" >> $GITHUB_STEP_SUMMARY
+          echo "- Linux: Built (deb, AppImage, rpm)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Release Contents:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -lh release-files/ >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================
+  # 第4阶段：同步到 Cloudflare R2 CDN
+  # ============================================
+  sync-to-r2:
+    name: Sync to R2 CDN
+    needs: upload-release
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Download release files
+        uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: release-files
+
+      - name: Upload to Cloudflare R2
+        run: |
+          # 安装 AWS CLI（用于 S3 兼容 API）
+          pip install awscli
+
+          # 提取版本号（去掉 v 前缀）
+          VERSION=${GITHUB_REF_NAME#v}
+
+          # 配置 R2 endpoint
+          R2_ENDPOINT="https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+
+          # 上传所有发布文件到 R2
+          for file in release-files/*; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              echo "Uploading $filename to R2..."
+
+              # 上传到版本目录
+              aws s3 cp "$file" "s3://perseng-releases/$VERSION/$filename" \
+                --endpoint-url "$R2_ENDPOINT"
+
+              # 同时更新 latest 目录（用于自动更新检测）
+              aws s3 cp "$file" "s3://perseng-releases/latest/$filename" \
+                --endpoint-url "$R2_ENDPOINT"
+            fi
+          done
+
+          echo "✅ All files uploaded to R2:"
+          echo "   - Version: perseng-releases/$VERSION/"
+          echo "   - Latest:  perseng-releases/latest/"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+
+      - name: Summary
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "## 🌐 R2 CDN Sync Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Version: $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 CDN URLs:" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: https://r2.deepractice.ai/perseng-releases/$VERSION/" >> $GITHUB_STEP_SUMMARY
+          echo "- Latest: https://r2.deepractice.ai/perseng-releases/latest/ (auto-redirects)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 CDN URLs:" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: https://r2.deepractice.ai/perseng-releases/$VERSION/" >> $GITHUB_STEP_SUMMARY
+          echo "- Latest: https://r2.deepractice.ai/perseng-releases/latest/ (auto-redirects)" >> $GITHUB_STEP_SUMMARY

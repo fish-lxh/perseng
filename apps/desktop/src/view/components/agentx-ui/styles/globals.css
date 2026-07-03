@@ -1,0 +1,52 @@
+/* ===== Cyberpunk HSL 色板(由 cyber-promptx.html 复刻) ===== */
+/* 与 globals.css 的 :root 保持等价感知,使用 HSL 体系以便与已有 hsl(var(--xxx)) 调用兼容 */
+@layer base {
+  :root {
+    --background: 220 60% 4%;          /* #050a14 cyber 主背景 */
+    --foreground: 204 84% 94%;         /* #e0f2fe cyber 主文本 */
+    --card: 218 53% 8%;                /* #0a1120 面板背景 */
+    --card-foreground: 204 84% 94%;
+    --popover: 218 53% 8%;
+    --popover-foreground: 204 84% 94%;
+    --primary: 187 100% 50%;          /* #00f0ff cyan 主色 */
+    --primary-foreground: 220 60% 4%;  /* 深色前景(置于 cyan 上) */
+    --secondary: 218 46% 12%;          /* #111b2e 次级面板 */
+    --secondary-foreground: 204 84% 94%;
+    --muted: 218 46% 12%;
+    --muted-foreground: 210 39% 63%;   /* #7aa2c8 muted 文本 */
+    --accent: 218 46% 12%;
+    --accent-foreground: 187 100% 50%;
+    --destructive: 327 100% 50%;       /* #ff00a0 magenta 危险色 */
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 52% 25%;             /* #1e3a5f 边框 */
+    --input: 218 53% 8%;
+    --ring: 187 100% 50%;
+    --radius: 0.5rem;
+    /* chart 与 .dark 已统一:因主题无切换机制,删除冗余 .dark 让 AgentX 只有一个统一色板 */
+    --chart-1: 187 100% 50%;
+    --chart-2: 327 100% 50%;
+    --chart-3: 60 100% 50%;
+    --chart-4: 187 70% 70%;
+    --chart-5: 327 70% 70%;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}

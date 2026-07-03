@@ -1,0 +1,70 @@
+{
+  "name": "@promptx/core",
+  "version": "2.4.1",
+  "description": "Core library for Perseng - DPML-powered AI prompt framework",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs"
+    },
+    "./cognition": {
+      "require": "./dist/cognition.js",
+      "import": "./dist/cognition.mjs"
+    },
+    "./resource": {
+      "require": "./dist/resource.js",
+      "import": "./dist/resource.mjs"
+    },
+    "./mcp": {
+      "require": "./dist/mcp.js",
+      "import": "./dist/mcp.mjs"
+    },
+    "./toolx": {
+      "require": "./dist/toolx.js",
+      "import": "./dist/toolx.mjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@npmcli/arborist": "^9.5.0",
+    "@promptx/logger": "workspace:*",
+    "@promptx/resource": "workspace:*",
+    "@rolexjs/core": "^1.6.3",
+    "@rolexjs/genesis": "^1.6.3",
+    "@rolexjs/local-platform": "^1.6.3",
+    "@rolexjs/parser": "^1.6.3",
+    "@rolexjs/prototype": "^1.6.3",
+    "@rolexjs/system": "^1.6.3",
+    "ajv": "^8.20.0",
+    "better-sqlite3": "^12.10.0",
+    "env-paths": "2.2.1",
+    "eta": "^3.5.0",
+    "execa": "^9.6.1",
+    "extract-comments": "^1.1.0",
+    "fs-extra": "^11.3.5",
+    "glob": "^13.0.6",
+    "importx": "^0.5.2",
+    "is-electron": "^2.2.2",
+    "peggy": "^5.1.0",
+    "resourcexjs": "^2.22.0",
+    "rolexjs": "^1.6.3"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@alicloud/openapi-client": "^0.4.15"
+  }
+}

@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  perseng:
+    image: deepracticexs/perseng:latest
+    ports:
+      - "5203:5203"
+    volumes:
+      # Data stored in PERSENG_DATA or .perseng folder next to docker-compose.yml
+      - ${PERSENG_DATA:-./.perseng}:/root/.perseng
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production

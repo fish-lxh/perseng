@@ -1,0 +1,35 @@
+{
+  "name": "@promptx/cli",
+  "version": "2.4.1",
+  "description": "Perseng CLI - Command-line interface for the DPML-powered AI prompt framework",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "promptx": "./dist/promptx.js",
+    "promptx-cli": "./dist/promptx.js"
+  },
+  "scripts": {
+    "start": "PERSENG_ENV=development node dist/promptx.js",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@promptx/core": "workspace:*",
+    "@promptx/logger": "workspace:*",
+    "@promptx/mcp-server": "workspace:*",
+    "chalk": "^5.6.2",
+    "commander": "^12.1.0"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT"
+}

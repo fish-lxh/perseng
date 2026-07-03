@@ -1,0 +1,113 @@
+appId: ai.deepractice.perseng.desktop
+productName: Perseng
+artifactName: perseng-desktop-${version}-${os}-${arch}.${ext}
+
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - "out/**/*"
+  - "assets/**/*"
+  - "package.json"
+  - "!**/*.map"
+  - "!out/tests/**"
+  - "!**/*.test.*"
+  - "!**/node_modules/*/{README,readme,readme.md,readme.markdown,CHANGELOG,changelog,changelog.md,CHANGE,change,test,example,examples}"
+  - "!**/node_modules/*/{.editorconfig,.eslintrc,.jshintrc,.npmignore}"
+  - "!**/node_modules/**/*.ts"
+  - "!**/node_modules/**/*.tsx"
+  - "!**/node_modules/**/*.map"
+  - "!**/node_modules/**/*.d.ts"
+  - "!**/node_modules/.bin"
+  - "!**/{test,__tests__,tests,testing}"
+  - "!**/{example,examples,docs,doc}"
+  - "!**/*.{md,MD,markdown,txt}"
+  - "node_modules/@promptx/resource/dist/resources/**/*"
+  # Re-include .md files for system roles (overrides the above exclusion)
+  - "node_modules/@promptx/resource/dist/resources/**/*.md"
+
+extraResources:
+  - from: "../../packages/mcp-office/dist"
+    to: "mcp-office"
+    filter:
+      - "**/*"
+  - from: "../../packages/mcp-workspace/dist"
+    to: "mcp-workspace"
+    filter:
+      - "**/*"
+
+mac:
+  category: public.app-category.developer-tools
+  icon: assets/icons/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: assets/entitlements.mac.plist
+  entitlementsInherit: assets/entitlements.mac.plist
+  artifactName: perseng-desktop-${version}-mac-${arch}.${ext}
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+
+win:
+  icon: assets/icons/icon.png
+  artifactName: perseng-desktop-${version}-win32-${arch}.${ext}
+  requestedExecutionLevel: asInvoker
+  target:
+    - nsis
+
+portable:
+  artifactName: perseng-desktop-${version}-${os}-${arch}-portable.${ext}
+
+linux:
+  icon: assets/icons
+  category: Development
+  maintainer: Deepractice AI <sean@deepracticex.com>
+  description: Perseng - AI Context Platform based on MCP protocol
+  synopsis: Local AI prompt management application
+  target:
+    - target: deb
+      arch: [x64, arm64]
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: rpm
+      arch: [x64, arm64]
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ${productName}
+  artifactName: perseng-desktop-${version}-win32-${arch}-setup.${ext}
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+npmRebuild: true
+
+# Electron download mirror
+# Use official GitHub source (fallback if China mirror fails)
+electronDownload:
+  mirror: https://github.com/electron/electron/releases/download/
+
+# 生成更新元数据文件
+generateUpdatesFilesForAllChannels: true
+
+# 发布配置
+# 优先级顺序:Perseng CDN (优先) → GitHub (兜底)
+publish:
+  - provider: generic
+    url: https://perseng.deepractice.ai/download/latest
+  - provider: github
+    owner: Deepractice
+    repo: Perseng
+    releaseType: release

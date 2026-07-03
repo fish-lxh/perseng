@@ -1,0 +1,109 @@
+# Project-specific
+CLAUDE.md
+
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Package manager files (keep pnpm-lock.yaml for reproducible builds)
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist/
+build/
+/lib/
+*.tsbuildinfo
+
+# Testing
+coverage/
+.nyc_output
+*.lcov
+test-output/
+test-results/
+cucumber-report.json
+cucumber-report.html
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Cache directories
+.npm
+.eslintcache
+.node_repl_history
+.turbo
+
+# Output of package managers
+*.tgz
+.yarn-integrity
+
+# Temporary folders
+tmp/
+temp/
+
+# Act local testing
+.github/.env.act
+
+# Application specific
+/.memory/
+
+# Perseng local development directories (兼容老项目 .promptx/, 迁移期保留)
+.perseng/
+.promptx/
+.serena/
+.claude/
+
+/.idea/
+/.vscode/
+
+# Development
+*.orig
+.husky/
+.lefthook/
+
+.kilocode/
+
+# act本地测试文件
+.env.act
+.secrets
+*.local
+
+
+# temp dir
+temp/
+tmp/
+.changeset/prerelease.lock
+.secrets

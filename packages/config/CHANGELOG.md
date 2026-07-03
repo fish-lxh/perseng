@@ -1,0 +1,145 @@
+# @promptx/config Changelog
+
+## 2.4.1
+
+### Patch Changes
+
+- [#572](https://github.com/Deepractice/PromptX/pull/572) [`afe93c6`](https://github.com/Deepractice/PromptX/commit/afe93c68a917e75c0cf43dc0ddd16f9531425554) Thanks [@dfwgj](https://github.com/dfwgj)! - fix(runtime): 修复工具执行期间空闲超时误触发导致回复被截断的问题
+
+  AI 调用工具后（`message_delta` stop_reason=tool_use），SDK 进入静默等待状态，直到工具执行完成返回 `tool_result`。这段静默期内没有任何流式事件重置空闲计时器，导致超过 10 分钟后触发 "Request timeout after 600000ms"，将仍在进行中的请求强制中断。
+
+  修复方式：检测到工具执行开始时，启动心跳定时器（间隔为 timeout/2，最大 2 分钟），持续重置空闲计时器直到 tool_result 返回。工具结果到达、请求正常完成或异常清理时，心跳自动停止。
+
+## 2.4.0
+
+### Patch Changes
+
+- [#565](https://github.com/Deepractice/PromptX/pull/565) [`51bd52f`](https://github.com/Deepractice/PromptX/commit/51bd52f042c47af8c1ed75a8c4cbb3e3441efb9d) Thanks [@dfwgj](https://github.com/dfwgj)! - ## Bug Fixes
+
+  - **runtime**: 修复对话超时误触发问题 — 将绝对超时改为空闲超时（`timeout({ each: 600000 })`），每次 AI 输出都会重置计时器，只有真正超过 600 秒无任何响应才触发超时
+  - **mcp-workspace**: 修复生产环境打包缺失问题 — 将 `external` 改为 `noExternal`，确保 `@promptx/logger` 和 `@modelcontextprotocol/sdk` 被打包进产物；同时在 `electron-builder.yml` 补充 `extraResources` 配置，生产包中正确包含 mcp-workspace
+
+  ## New Features
+
+  - **desktop**: 设置页新增「接入其他平台」Tab，提供 Trae 及 Claude/Cursor 等 AI 工具的一键复制 MCP 配置
+
+## 2.3.0
+
+## 2.2.1
+
+## 2.2.0
+
+## 2.1.1
+
+## 2.1.0
+
+## 1.28.3
+
+## 1.28.2
+
+## 1.28.0
+
+## 1.27.8
+
+## 1.27.7
+
+## 1.27.6
+
+## 1.27.5
+
+## 1.27.4
+
+## 1.27.3
+
+## 1.27.2
+
+## 1.27.1
+
+## 1.27.0
+
+### Minor Changes
+
+- [#470](https://github.com/Deepractice/PromptX/pull/470) [`40db475`](https://github.com/Deepractice/PromptX/commit/40db4752adfc0c534c88876d2ce59f7ffce79de7) Thanks [@dfwgj](https://github.com/dfwgj)! - Change: Remove auto-start at login configuration and decouple responsibilities.
+
+  Details
+
+  - Remove all options related to auto-start/login-start from `@promptx/config` (e.g., enable switch, delay, platform exceptions).
+  - Migrate auto-start capability to `@promptx/desktop` (Electron main process) with unified management and persistence.
+  - Keep other configuration intact; CLI/server packages are unaffected.
+
+  Motivation
+
+  - `@promptx/config` should focus on pure configuration and shared constants; platform behavior (such as auto-start) belongs in the desktop app.
+  - Reduce cross-package coupling and avoid platform-specific bloat in the config package.
+
+  Impact
+
+  - Code that reads auto-start options from `@promptx/config` will no longer work; migrate to the desktop app’s API/settings.
+  - No impact for typical users; only extensions or custom scaffolding relying on the old options are affected.
+
+  Migration Guide
+
+  - Enable/disable auto-start from the desktop app’s settings (handled in the main process and persisted).
+  - For programmatic control, use the desktop app’s IPC/services; do not read/write auto-start options from `@promptx/config`.
+  - Remove references/defaults to the old options in your project to prevent stale config.
+
+  Notes
+
+  - This is a forward-compatible refactor that does not change other configs. If your project strongly depends on the removed options, treat it as potentially breaking and follow the migration guide above.
+
+## 1.26.0
+
+### Patch Changes
+
+- [#461](https://github.com/Deepractice/PromptX/pull/461) [`395f07f`](https://github.com/Deepractice/PromptX/commit/395f07f9429b5417f1ec2a233fb5d8d692b74ff7) Thanks [@dfwgj](https://github.com/dfwgj)! - fix(config): refine AutoStartManager and ServerConfigManager
+
+  Summary
+
+  - Minor fixes and quality improvements to `AutoStartManager` and `ServerConfigManager`.
+  - No breaking changes; existing API remains compatible.
+
+  AutoStartManager
+
+  - Ensures consistent enable/disable behavior across Windows, macOS, and Linux.
+  - Honors `isHidden` option on startup and clarifies default `path=process.execPath`.
+  - Improves `isEnabled()` reliability and error handling for edge cases.
+
+  ServerConfigManager
+
+  - Creates the config directory/file on first use if missing (`~/.promptx/server-config.json`).
+  - Adds basic validation for `port` range and trims `host` input.
+  - Ensures default values are applied when fields are absent.
+  - Improves `updateConfig(partial)` merge semantics to avoid accidental overwrites.
+
+  Persistence & UX
+
+  - Read/write flow for `~/.promptx/server-config.json` is more robust.
+  - Clearer error surfaces to help callers present user-friendly messages.
+
+  Testing
+
+  - Verified reading and writing of server config defaults.
+  - Confirmed auto-start enable/disable/status works in common environments.
+
+  Refs
+
+  - #370 Auto-start
+  - #458 Service network configuration
+
+所有显著变更都会记录在此文件中。
+
+## 1.0.0 - 2025-10-29
+
+### Features
+
+- 开机自启动：提供 `AutoStartManager`，基于 `auto-launch` 跨平台启用/禁用自启动，并支持 macOS `useLaunchAgent` 选项。
+- 网络端口自定义与持久化：提供 `ServerConfigManager`，支持设置并持久化 `port`、`host`、`transport`（stdio/http）、`corsEnabled`、`debug`；默认存储于 `~/.promptx/server-config.json`。
+
+### Notes
+
+- 与桌面端设置页及 MCP Server 集成后，重启应用将按已保存配置绑定端口与地址，UI 与服务运行状态保持一致。
+- HTTP 模式建议开启 `corsEnabled` 供渲染层访问；若配置文件损坏会回退默认值并在加载阶段输出告警。
+
+## 0.0.1 - 2025-10-01
+
+- 初始发布：包结构与基础构建配置（tsup/tsconfig/exports）。

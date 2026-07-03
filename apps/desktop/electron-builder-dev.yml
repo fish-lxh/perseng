@@ -1,0 +1,48 @@
+appId: ai.deepractice.perseng.desktop
+productName: Perseng
+artifactName: perseng-desktop-${version}-${os}-${arch}.${ext}
+
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - "out/**/*"
+  - "assets/**/*"
+  - "package.json"
+  - "!**/*.map"
+  - "!out/tests/**"
+  - "!**/*.test.*"
+  - "!**/node_modules/*/{README,readme,readme.md,readme.markdown,CHANGELOG,changelog,changelog.md,CHANGE,change,test,example,examples}"
+  - "!**/node_modules/*/{.editorconfig,.eslintrc,.jshintrc,.npmignore}"
+  - "!**/node_modules/**/*.ts"
+  - "!**/node_modules/**/*.tsx"
+  - "!**/node_modules/**/*.map"
+  - "!**/node_modules/**/*.d.ts"
+  - "!**/node_modules/.bin"
+  - "!**/{test,__tests__,tests,testing}"
+  - "!**/{example,examples,docs,doc}"
+  - "!**/*.{md,MD,markdown,txt}"
+  - "node_modules/@promptx/resource/dist/resources/**/*"
+
+mac:
+  category: public.app-category.developer-tools
+  icon: assets/icons/icon.icns
+  hardenedRuntime: true  # 启用强化运行时以匹配生产环境
+  gatekeeperAssess: false
+  # 使用公司证书签名
+  identity: "CHINGHO YANG (2L3974JGL8)"
+  notarize: false  # 本地测试暂不公证
+  # 只打 ZIP 包,不打 DMG
+  target:
+    - target: zip
+      arch: [arm64]  # 只打当前架构,更快
+
+# 启用代码签名
+forceCodeSigning: true
+
+# 禁用 npm rebuild,加快速度
+npmRebuild: false
+
+# 关闭压缩,最快速度
+compression: store
