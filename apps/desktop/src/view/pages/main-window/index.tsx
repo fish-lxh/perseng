@@ -142,38 +142,44 @@ function MainContent() {
 
 
 
-  const renderHeaderActions = () => {
+  // KNUTH-FEAT 2026-07-04: Import 按钮仅在角色页面显示（用户偏好），
+  // 其他页面隐藏（虽然 avatar 等导入特性理论上可在任何页面发起）。
+  // Create Role/Tool 按钮保留原 switch-case 行为。
+  const renderImportButton = () =>
+    currentPage === "roles" ? (
+      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setImportOpen(true)}>
+        <Upload className="h-3.5 w-3.5 mr-1" />
+        {t("resources.import.actions.import")}
+      </Button>
+    ) : null
+
+  const renderCreateButton = () => {
     switch (currentPage) {
       case "tools":
         return (
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setImportOpen(true)}>
-              <Upload className="h-3.5 w-3.5 mr-1" />
-              {t("resources.import.actions.import")}
-            </Button>
-            <Button size="sm" className="h-7 text-xs bg-foreground text-background hover:bg-foreground/90" onClick={() => goToSendMessage(t("agentxUI.welcome.presets.lubanPrompt"))}>
-              <Plus className="h-3.5 w-3.5 mr-1" />
-              {t("tools.detail.createTool")}
-            </Button>
-          </div>
+          <Button size="sm" className="h-7 text-xs bg-foreground text-background hover:bg-foreground/90" onClick={() => goToSendMessage(t("agentxUI.welcome.presets.lubanPrompt"))}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            {t("tools.detail.createTool")}
+          </Button>
         )
       case "roles":
         return (
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setImportOpen(true)}>
-              <Upload className="h-3.5 w-3.5 mr-1" />
-              {t("resources.import.actions.import")}
-            </Button>
-            <Button size="sm" className="h-7 text-xs bg-foreground text-background hover:bg-foreground/90" onClick={() => goToSendMessage(t("agentxUI.welcome.presets.nuwaPrompt"))}>
-              <Plus className="h-3.5 w-3.5 mr-1" />
-              {t("roles.detail.createRole")}
-            </Button>
-          </div>
+          <Button size="sm" className="h-7 text-xs bg-foreground text-background hover:bg-foreground/90" onClick={() => goToSendMessage(t("agentxUI.welcome.presets.nuwaPrompt"))}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            {t("roles.detail.createRole")}
+          </Button>
         )
       default:
         return null
     }
   }
+
+  const renderHeaderActions = () => (
+    <div className="flex items-center gap-2">
+      {renderImportButton()}
+      {renderCreateButton()}
+    </div>
+  )
 
   const renderPage = () => {
     switch (currentPage) {

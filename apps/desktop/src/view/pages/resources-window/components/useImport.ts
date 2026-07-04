@@ -3,7 +3,6 @@ import { toast } from "sonner"
 import { useTranslation } from "react-i18next"
 
 export type ResourceType = "role" | "tool"
-export type RoleVersion = "v1" | "v2"
 
 export interface UseImportOptions {
   defaultResourceType?: ResourceType
@@ -16,10 +15,10 @@ export interface UseImportOptions {
 export function useImport({ defaultResourceType = "role", lockedResourceType = false, enableV2 = false, onSuccess, onClose }: UseImportOptions) {
   const { t } = useTranslation()
   const [resourceType, setResourceType] = useState<ResourceType>(defaultResourceType)
-  const [roleVersion, setRoleVersion] = useState<RoleVersion>("v2")
   const [filePaths, setFilePaths] = useState<string[]>([])
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
+  const [avatarPath, setAvatarPath] = useState<string>("")
   const [isImporting, setIsImporting] = useState(false)
 
   useEffect(() => {
@@ -30,13 +29,13 @@ export function useImport({ defaultResourceType = "role", lockedResourceType = f
     setFilePaths([])
     setName("")
     setDescription("")
+    setAvatarPath("")
     setResourceType(defaultResourceType)
-    setRoleVersion("v2")
   }
 
   const selectFiles = async () => {
     try {
-      const result = await window.electronAPI?.invoke("dialog:openFile", {
+      const result = await window.electronAPI?.dialog.openFile({
         filters: [
           { name: "ZIP files", extensions: ["zip"] },
           { name: "All files", extensions: ["*"] },
@@ -55,6 +54,25 @@ export function useImport({ defaultResourceType = "role", lockedResourceType = f
     setFilePaths((prev) => prev.filter((_, i) => i !== index))
   }
 
+  // KNUTH-FEAT 2026-07-04: Import 时可选附加图标（V1/V2 都支持）。
+  // 复用 RoleDetailPanel.uploadRoleAvatar 的 dialog.openFile 模式，
+  // 仅角色显示（resourceType==='role'）；tool 不传 avatarPath，handler 自然忽略。
+  const selectAvatar = async () => {
+    try {
+      const result = await window.electronAPI?.dialog.openFile({
+        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
+        properties: ["openFile"],
+      })
+      if (result?.filePaths?.[0]) {
+        setAvatarPath(result.filePaths[0])
+      }
+    } catch {
+      toast.error(t("resources.import.messages.fileNotFound"))
+    }
+  }
+
+  const removeAvatar = () => setAvatarPath("")
+
   const submit = async () => {
     if (filePaths.length === 0) {
       toast.error(t("resources.import.messages.selectFile"))
@@ -65,22 +83,29 @@ export function useImport({ defaultResourceType = "role", lockedResourceType = f
     let successCount = 0
     let failCount = 0
     const isSingle = filePaths.length === 1
-    const isV2Role = resourceType === "role" && roleVersion === "v2" && enableV2
+    // KNUTH-FEAT 2026-07-04: V1/V2 由 server-config.enableV2 决定，
+    // 不再让用户在 dialog 里选。enableV2=true 走 V2 (RoleX)，否则走 V1 (DPML)。
+    const isV2Role = resourceType === "role" && enableV2 === true
 
     try {
       for (const filePath of filePaths) {
         try {
+          // KNUTH-FEAT 2026-07-04: avatar 是单文件 + 仅角色附加的元数据。
+          // 多文件批量时不传（避免歧义），tool 也不传（handler 不写入非角色类型）。
+          const avatarPayload = isSingle && resourceType === "role" ? avatarPath || undefined : undefined
           const result = isV2Role
             ? await window.electronAPI?.invoke("resources:importV2Role", {
                 filePath,
                 name: isSingle ? name || undefined : undefined,
                 description: isSingle ? description || undefined : undefined,
+                avatarPath: avatarPayload,
               })
             : await window.electronAPI?.invoke("resources:import", {
                 filePath,
                 type: resourceType,
                 name: isSingle ? name || undefined : undefined,
                 description: isSingle ? description || undefined : undefined,
+                avatarPath: avatarPayload,
               })
 
           if (result?.success) {
@@ -125,7 +150,7 @@ export function useImport({ defaultResourceType = "role", lockedResourceType = f
   }
 
   return {
-    state: { resourceType, roleVersion, filePaths, name, description, isImporting, lockedResourceType },
-    actions: { setResourceType, setRoleVersion, selectFiles, removeFile, setName, setDescription, submit, close },
+    state: { resourceType, filePaths, name, description, avatarPath, isImporting, lockedResourceType },
+    actions: { setResourceType, selectFiles, removeFile, setName, setDescription, selectAvatar, removeAvatar, submit, close },
   }
 }

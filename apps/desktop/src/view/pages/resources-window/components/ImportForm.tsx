@@ -4,64 +4,46 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Upload, FileArchive, X } from "lucide-react"
+import { Upload, FileArchive, Image as ImageIcon, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import type { ResourceType, RoleVersion } from "./useImport"
+import type { ResourceType } from "./useImport"
 
 interface ImportFormProps {
   resourceType: ResourceType
   lockedResourceType: boolean
-  roleVersion: RoleVersion
-  enableV2: boolean
   filePaths: string[]
   name: string
   description: string
+  // KNUTH-FEAT 2026-07-04: 可选角色图标（V1/V2 都支持，仅角色显示）
+  avatarPath: string
   onResourceTypeChange: (v: ResourceType) => void
-  onRoleVersionChange: (v: RoleVersion) => void
   onSelectFiles: () => void
   onRemoveFile: (index: number) => void
   onNameChange: (v: string) => void
   onDescriptionChange: (v: string) => void
+  onSelectAvatar: () => void
+  onRemoveAvatar: () => void
 }
 
 export function ImportForm({
-  resourceType, lockedResourceType, roleVersion, enableV2, filePaths, name, description,
-  onResourceTypeChange, onRoleVersionChange, onSelectFiles, onRemoveFile,
-  onNameChange, onDescriptionChange,
+  resourceType, lockedResourceType, filePaths, name, description, avatarPath,
+  onResourceTypeChange, onSelectFiles, onRemoveFile,
+  onNameChange, onDescriptionChange, onSelectAvatar, onRemoveAvatar,
 }: ImportFormProps) {
   const { t } = useTranslation()
   const isSingle = filePaths.length <= 1
   const isRole = resourceType === "role"
-  // V2 未开启时强制使用 v1
-  const effectiveRoleVersion: RoleVersion = enableV2 ? roleVersion : "v1"
 
   return (
     <div className="space-y-4">
-      {/* 资源类型：锁定时只展示标签，不可更改 */}
+      {/* 资源类型：锁定时只展示标签，不可更改。
+          KNUTH-FEAT 2026-07-04: 移除了 V1/V2 切换按钮 — V1/V2 由 zip 内容自动决定，
+          server-config.enableV2 决定实际走哪个 import handler。 */}
       {lockedResourceType ? (
         <div className="flex items-center gap-3">
           <span className="text-sm font-medium text-foreground">
             {isRole ? t("resources.types.role") : t("resources.types.tool")}
           </span>
-          {/* 角色锁定时，仅 enableV2 时显示 V1/V2 切换 */}
-          {isRole && enableV2 && (
-            <div className="flex gap-1 rounded-md border p-0.5">
-              {(["v1", "v2"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-                    effectiveRoleVersion === v
-                      ? "bg-foreground text-background"
-                      : "text-muted-foreground hover:bg-muted"
-                  }`}
-                  onClick={() => onRoleVersionChange(v)}
-                >
-                  {v === "v1" ? "V1 DPML" : "V2 RoleX"}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       ) : (
         <div className="space-y-2">
@@ -109,8 +91,42 @@ export function ImportForm({
         )}
       </div>
 
-      {/* 以下字段仅单文件且非V2角色时显示 */}
-      {isSingle && !(isRole && effectiveRoleVersion === "v2") && (
+      {/* KNUTH-FEAT 2026-07-04: 角色图标（V1/V2 都显示，tool 不显示）。
+          与 name/description 的 `!v2` 隐藏规则独立判断——avatar 是角色级附件文件，不是 metadata。 */}
+      {isSingle && isRole && (
+        <div className="space-y-2">
+          <Label>{t("resources.import.fields.avatar")}</Label>
+          <Button type="button" variant="outline" onClick={onSelectAvatar} className="w-full">
+            <Upload className="h-4 w-4 mr-2" />
+            {t("resources.import.fields.avatarUpload")}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            {t("resources.import.fields.avatarHint")}
+          </p>
+          {avatarPath && (
+            <div className="flex items-center justify-between text-sm text-muted-foreground bg-secondary/50 p-2 rounded">
+              <div className="flex items-center gap-2 overflow-hidden">
+                <ImageIcon className="h-4 w-4 flex-shrink-0" />
+                <span className="truncate" title={avatarPath}>{avatarPath.split(/[\\/]/).pop()}</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 flex-shrink-0 hover:bg-destructive/20 hover:text-destructive"
+                onClick={onRemoveAvatar}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* KNUTH-FEAT 2026-07-04: 解锁 V2 自定义 name/description。
+          历史原因导致 V2 输入框被隐藏，但后端 resources:importV2Role 和
+          PersengResourceRepository.convertToResource 都已支持 V2 metadata。
+          修正条件：单文件即可（不再屏蔽 V2）。 */}
+      {isSingle && (
         <>
           <div className="space-y-2">
             <Label>{t("resources.import.fields.customName")}</Label>

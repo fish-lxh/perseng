@@ -38,17 +38,18 @@ export function ResourceImporter({
           <ImportForm
             resourceType={state.resourceType}
             lockedResourceType={state.lockedResourceType}
-            roleVersion={state.roleVersion}
-            enableV2={enableV2}
             filePaths={state.filePaths}
             name={state.name}
             description={state.description}
+            // KNUTH-FEAT 2026-07-04: 透传 avatar props；V1/V2 toggle 已删除
+            avatarPath={state.avatarPath}
             onResourceTypeChange={actions.setResourceType}
-            onRoleVersionChange={actions.setRoleVersion}
             onSelectFiles={actions.selectFiles}
             onRemoveFile={actions.removeFile}
             onNameChange={actions.setName}
             onDescriptionChange={actions.setDescription}
+            onSelectAvatar={actions.selectAvatar}
+            onRemoveAvatar={actions.removeAvatar}
           />
         </div>
 

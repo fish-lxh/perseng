@@ -348,7 +348,10 @@
         "customName": "自定义名称（可选）",
         "customNamePlaceholder": "资源的显示名称",
         "customDescription": "自定义描述（可选）",
-        "customDescriptionPlaceholder": "资源的简要描述"
+        "customDescriptionPlaceholder": "资源的简要描述",
+        "avatar": "角色图标（可选）",
+        "avatarUpload": "选择图标",
+        "avatarHint": "PNG/JPG/JPEG/WebP · 不选则沿用 ZIP 自带"
       },
       "actions": {
         "cancel": "取消",
@@ -363,7 +366,8 @@
         "fileNotFound": "文件未找到",
         "resourceExists": "资源已存在",
         "resourceExistsMessage": "资源 \"{{id}}\" 已存在。是否覆盖？",
-        "cancelled": "操作已取消"
+        "cancelled": "操作已取消",
+        "avatarOverrideZipProfile": "已用所选图标覆盖 ZIP 自带的 profile"
       },
       "urlComingSoon": "URL 导入功能即将推出..."
     },

@@ -349,7 +349,10 @@
         "customName": "Custom Name (Optional)",
         "customNamePlaceholder": "Display name for the resource",
         "customDescription": "Custom Description (Optional)",
-        "customDescriptionPlaceholder": "Brief description of the resource"
+        "customDescriptionPlaceholder": "Brief description of the resource",
+        "avatar": "Role Avatar (Optional)",
+        "avatarUpload": "Choose Avatar",
+        "avatarHint": "PNG/JPG/JPEG/WebP · Uses ZIP's bundled profile if skipped"
       },
       "actions": {
         "cancel": "Cancel",
@@ -364,7 +367,8 @@
         "fileNotFound": "File not found",
         "resourceExists": "Resource exists",
         "resourceExistsMessage": "Resource \"{{id}}\" already exists. Overwrite?",
-        "cancelled": "Operation cancelled"
+        "cancelled": "Operation cancelled",
+        "avatarOverrideZipProfile": "Replaced ZIP's bundled profile with selected avatar"
       },
       "urlComingSoon": "URL import feature is coming soon..."
     },

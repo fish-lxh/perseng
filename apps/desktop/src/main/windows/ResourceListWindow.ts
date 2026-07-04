@@ -9,6 +9,29 @@ import {
   createFramelessWindowOptions,
 } from '~/main/windows/windowShell'
 
+// KNUTH-FEAT 2026-07-04: Import 对话框加头像（V1/V2 都支持）
+// 复用 uploadRoleAvatar（行 1208-1215）的"清旧 + copy"模式提到顶层，
+// 避免两个 handler 内联重复。
+const AVATAR_EXTS = ['png', 'jpg', 'jpeg', 'webp']
+
+/**
+ * 清空目标目录下所有 profile.{png,jpg,jpeg,webp}，再把 srcPath 复制为 profile.<ext>。
+ * 镜像 uploadRoleAvatar 的语义，保证两边落盘协议一致。
+ */
+async function clearAndCopyAvatar(
+  targetDir: string,
+  srcPath: string
+): Promise<void> {
+  const pathMod = require('path')
+  const fs = require('fs-extra')
+  for (const ext of AVATAR_EXTS) {
+    const existing = pathMod.join(targetDir, `profile.${ext}`)
+    if (await fs.pathExists(existing)) await fs.remove(existing)
+  }
+  const ext = pathMod.extname(srcPath).toLowerCase().slice(1) || 'png'
+  await fs.copy(srcPath, pathMod.join(targetDir, `profile.${ext}`), { overwrite: true })
+}
+
 /**
  * Resource List Window - 资源管理窗口
  */
@@ -661,9 +684,11 @@ export class ResourceListWindow {
       customId?: string
       name?: string
       description?: string
+      // KNUTH-FEAT 2026-07-04: Import 时可选附加图标（仅角色生效，tool 自然忽略）
+      avatarPath?: string
     }) => {
       try {
-        const { filePath, type, customId, name, description } = payload || {}
+        const { filePath, type, customId, name, description, avatarPath } = payload || {}
 
         if (!filePath || !type) {
           return { success: false, message: t('resources.missingParams') }
@@ -759,6 +784,12 @@ export class ResourceListWindow {
           // 复制到用户目录
           await fs.copy(resourceDir, userResourceDir)
 
+          // KNUTH-FEAT 2026-07-04: 头像落盘 → ~/.perseng/resource/<type>/<finalId>/profile.<ext>
+          // 仅角色类型 + 用户提供了 avatarPath 才生效；tool 类型自然忽略。
+          if (avatarPath && type === 'role' && await fs.pathExists(avatarPath)) {
+            await clearAndCopyAvatar(userResourceDir, avatarPath)
+          }
+
           // 如果提供了自定义名称或描述，写入 metadata.json（优先级最高）
           if (name || description) {
             const metadataFile = path.join(userResourceDir, 'metadata.json')
@@ -815,9 +846,11 @@ export class ResourceListWindow {
       customId?: string
       name?: string
       description?: string
+      // KNUTH-FEAT 2026-07-04: V2 import 时可选附加图标
+      avatarPath?: string
     }) => {
       try {
-        const { filePath, customId, name, description } = payload || {}
+        const { filePath, customId, name, description, avatarPath } = payload || {}
         if (!filePath) return { success: false, message: t('resources.missingParams') }
 
         const fs = require('fs-extra')
@@ -893,6 +926,14 @@ export class ResourceListWindow {
 
           await fs.ensureDir(pathMod.dirname(targetDir))
           await fs.copy(identityDir, targetDir)
+
+          // KNUTH-FEAT 2026-07-04: V2 头像落盘 → ~/.rolex/roles/<id>/profile.<ext>
+          // 与 metadata.json 同级（pathMod.dirname(targetDir)），不入 identity/ 子目录，
+          // 避免污染 RoleX 的身份定义目录。getRoleAvatar 已搜此路径（第二候选）。
+          if (avatarPath && await fs.pathExists(avatarPath)) {
+            const roleLevelDir = pathMod.dirname(targetDir)
+            await clearAndCopyAvatar(roleLevelDir, avatarPath)
+          }
 
           // 写入自定义 metadata（name/description）
           if (name || description) {
