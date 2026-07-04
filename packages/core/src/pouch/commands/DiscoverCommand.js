@@ -215,36 +215,34 @@ class DiscoverCommand extends BasePouchCommand {
    */
   async loadRoleRegistry () {
     logger.info('[DiscoverCommand] Loading role registry...')
-    
+
     // 资源刷新已经在 assembleAreas 中的 refreshAllResources 完成
     // 这里直接使用ResourceManager的注册表
     const roles = this.resourceManager.registryData.getResourcesByProtocol('role')
-    
+
     // 严格过滤：只保留 protocol 确实是 'role' 的资源
     const filteredRoles = roles.filter(role => role.protocol === 'role')
-    
+
     // 转换为对象格式以保持兼容性
     const registry = {}
     filteredRoles.forEach(role => {
       registry[role.id] = role
     })
-    
+
     logger.info(`[DiscoverCommand] Found ${Object.keys(registry).length} roles`)
 
     // 合并 V2 角色（RoleX）
+    // KNUTH-FIX 2026-07-04: 之前 `registry[role.id] = {...role, version: 'v2'}` 会用 V2 物理替换同 ID 的 V1 role，
+    // 导致 7/8 个系统级 V1 role 在 UI 消失、只剩 1 个 jiangziya。修复：V2 一律走 `v2:` 前缀，让 V1/V2 并存。
     try {
       const bridge = getRolexBridge()
       const v2Roles = await bridge.listV2Roles()
       v2Roles.forEach(role => {
-        // 如果 V1 registry 中已存在同名角色，用 V2 版本覆盖（避免重复）
-        if (registry[role.id]) {
-          registry[role.id] = { ...role, version: 'v2' }
-        } else {
-          registry[`v2:${role.id}`] = role
-        }
+        // 不再覆盖 V1（包括 ID 重名也走 v2: 前缀保持 V1 可见）
+        registry[`v2:${role.id}`] = { ...role, version: 'v2' }
       })
       if (v2Roles.length > 0) {
-        logger.info(`[DiscoverCommand] Found ${v2Roles.length} V2 roles from RoleX`)
+        logger.info(`[DiscoverCommand] Found ${v2Roles.length} V2 roles from RoleX (kept under v2: prefix to preserve V1 system roles)`)
       }
     } catch (error) {
       // RoleX 不可用时静默跳过

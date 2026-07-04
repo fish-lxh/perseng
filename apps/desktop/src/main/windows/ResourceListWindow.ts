@@ -1146,9 +1146,21 @@ export class ResourceListWindow {
         }
 
         let avatarPath: string | null = null
+        // ============ DEBUG: 临时诊断日志(2026-07-04) 已撤掉，V1/V2 路径修完 ============
 
         if (source === 'user') {
-          avatarPath = await findProfile(pathMod.join(os.homedir(), '.perseng', 'resource', 'role', id))
+          // KNUTH-FIX 2026-07-04: V2 角色的物理目录是 ~/.rolex/roles/<id>/identity/，
+          // 头像文件可能在 identity/profile.* 或直接在 ~/.rolex/roles/<id>/profile.*。
+          // V1 标准路径 ~/.perseng/resource/role/<id>/profile.* 也保留作为兜底。
+          const candidates = [
+            pathMod.join(os.homedir(), '.perseng', 'resource', 'role', id),
+            pathMod.join(os.homedir(), '.rolex', 'roles', id),
+            pathMod.join(os.homedir(), '.rolex', 'roles', id, 'identity'),
+          ]
+          for (const dir of candidates) {
+            const found = await findProfile(dir)
+            if (found) { avatarPath = found; break }
+          }
         } else if (source === 'project') {
           try {
             const { ProjectPathResolver } = require('@promptx/core')

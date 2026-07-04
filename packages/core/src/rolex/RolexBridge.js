@@ -632,10 +632,25 @@ class RolexBridge {
               const id = match[1].trim()
               if (id) {
                 const isSeed = RolexBridge.SEED_ROLES.includes(id)
+                // KNUTH-FIX 2026-07-04: 之前 description 硬编码 ''，UI 显示"暂无描述"。
+                // 现在优先从 Gherkin Feature 文件 scrape（Persona.identity.feature），
+                // 如果文件不存在则用占位文字 "V2 角色 · {id}"（不再空白）。
+                const featurePath = path.join(this.rolexRoot, 'roles', id, 'identity', 'persona.identity.feature')
+                let description = ''
+                try {
+                  if (await fs.pathExists(featurePath)) {
+                    const content = await fs.readFile(featurePath, 'utf-8')
+                    description = extractFeatureDescription(content)
+                  }
+                } catch {
+                  // 文件不可读忽略
+                }
+                if (!description) description = `V2 角色 · ${id}`
+
                 roles.push({
                   id,
                   name: id,
-                  description: '',
+                  description,
                   source: isSeed ? 'system' : 'rolex',
                   version: 'v2',
                   protocol: 'role'
