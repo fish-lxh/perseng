@@ -38,6 +38,8 @@
     "dist": "pnpm package:mac"
   },
   "dependencies": {
+    "@agentxjs/network": "1.9.0",
+    "@agentxjs/persistence": "1.9.0",
     "@agentxjs/queue": "1.9.0",
     "@agentxjs/runtime": "workspace:*",
     "@agentxjs/ui": "1.9.0",

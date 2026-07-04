@@ -90,6 +90,12 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@agentxjs/network':
+        specifier: 1.9.0
+        version: 1.9.0
+      '@agentxjs/persistence':
+        specifier: 1.9.0
+        version: 1.9.0
       '@agentxjs/queue':
         specifier: 1.9.0
         version: 1.9.0
