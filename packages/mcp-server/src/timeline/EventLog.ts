@@ -121,10 +121,9 @@ export class EventLog {
     try {
       fs.mkdirSync(path.dirname(dbPath), { recursive: true })
     } catch (err) {
-      logger.warn('[EventLog] Failed to create db dir, falling back to tmp', {
-        dbPath,
-        error: err instanceof Error ? err.message : String(err),
-      })
+      logger.warn(
+        `[EventLog] Failed to create db dir, falling back to tmp dbPath=${dbPath}: ${err instanceof Error ? err.message : String(err)}`,
+      )
       const fallback = path.join(
         process.env.TMPDIR || process.env.TMP || process.env.TEMP || '/tmp',
         'perseng-timeline',
@@ -138,13 +137,12 @@ export class EventLog {
       this.db.pragma('journal_mode = WAL')
       this.db.pragma('synchronous = NORMAL')
       this._initializeSchema()
-      logger.debug('[EventLog] Initialized', { dbPath: this.dbPath })
+      logger.debug(`[EventLog] Initialized dbPath=${this.dbPath}`)
     } catch (err) {
       // 打开失败时尝试重建（处理坏文件）
-      logger.warn('[EventLog] Open failed, recreating', {
-        dbPath: this.dbPath,
-        error: err instanceof Error ? err.message : String(err),
-      })
+      logger.warn(
+        `[EventLog] Open failed, recreating dbPath=${this.dbPath}: ${err instanceof Error ? err.message : String(err)}`,
+      )
       try {
         if (fs.existsSync(this.dbPath)) fs.unlinkSync(this.dbPath)
       } catch {
@@ -229,10 +227,9 @@ export class EventLog {
         Date.now(),
       )
     } catch (err) {
-      logger.warn('[EventLog] append failed', {
-        type: event.type,
-        error: err instanceof Error ? err.message : String(err),
-      })
+      logger.warn(
+        `[EventLog] append failed type=${event.type}: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   }
 
@@ -345,7 +342,9 @@ export class EventLog {
       default:
         throw new Error(`clear: unknown scope ${scope}`)
     }
-    logger.info('[EventLog] cleared', { scope, targetId: filter.targetId, deleted: info.changes })
+    logger.info(
+      `[EventLog] cleared scope=${scope} targetId=${filter.targetId ?? ''} deleted=${info.changes}`,
+    )
     return { deleted: info.changes }
   }
 
@@ -358,9 +357,7 @@ export class EventLog {
     try {
       this.db.close()
     } catch (err) {
-      logger.warn('[EventLog] close failed', {
-        error: err instanceof Error ? err.message : String(err),
-      })
+      logger.warn(`[EventLog] close failed: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 }

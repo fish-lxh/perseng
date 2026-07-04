@@ -1,8 +1,13 @@
-import { createAgentX, LoggerFactoryImpl, type AgentX, type Unsubscribe } from 'agentxjs'
+import { LoggerFactoryImpl, type AgentX, type Unsubscribe } from 'agentxjs'
 import * as logger from '@promptx/logger'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
 import { app } from 'electron'
+// KNUTH-FEAT 2026-07-04: 绕开 agentxjs facade 的 shouldEnqueue 过滤，
+// 让 timeline 拿到全量 events（特别是 tool_use_content_block_start /
+// tool_result / text_* 这类 source==='environment' 的事件）。
+// 见 plan: 方案 A - AgentXService 重写以捕获工具事件。
+import { createAgentXRuntime, type AgentXRuntime } from './agentx/createAgentXRuntime'
 
 export interface MCPServerConfig {
   name: string
@@ -47,6 +52,11 @@ const DEFAULT_CONFIG: AgentXConfig = {
 
 export class AgentXService {
   private agentx: AgentX | null = null
+  // KNUTH-FEAT 2026-07-04: 持有底层 runtime / wsServer / eventQueue 引用，
+  // 便于 start() 阶段 attach timeline-onAny，便于 stop() 阶段显式释放。
+  private runtime: AgentXRuntime | null = null
+  private wsServer: import('@agentxjs/network').WebSocketServer | null = null
+  private eventQueue: import('@agentxjs/queue').EventQueue | null = null
   private port: number = 5200
   private isRunning: boolean = false
   private config: AgentXConfig = { ...DEFAULT_CONFIG }
@@ -231,24 +241,26 @@ export class AgentXService {
         }
       }
 
-      this.agentx = await createAgentX({
+      const built = await createAgentXRuntime({
+        agentxDir: this.agentxDir,
         llm: {
           apiKey: this.config.apiKey,
           baseUrl: this.config.baseUrl,
           model: this.config.model,
         },
-        agentxDir: this.agentxDir,
-        environment: {
-          claudeCodePath: this.getClaudeAgentSdkCliPath(),
-        },
+        claudeCodePath: this.getClaudeAgentSdkCliPath(),
         defaultAgent: {
           name: 'Perseng Agent',
           mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
         },
       })
+      this.agentx = built.facade
+      this.runtime = built.runtime
+      this.wsServer = built.wsServer
+      this.eventQueue = built.eventQueue
 
       // Subscribe to image_create_response to setup .claude settings for new conversations
-      this.imageCreateUnsubscribe = this.agentx.onCommand('image_create_response', (event) => {
+      this.imageCreateUnsubscribe = this.agentx.onCommand('image_create_response', (event: any) => {
         if (event.data.record?.imageId) {
           this.setupClaudeSettings(event.data.record.imageId)
         }
@@ -257,12 +269,13 @@ export class AgentXService {
       await this.agentx.listen(this.port, this.externalAccess ? '0.0.0.0' : '127.0.0.1')
       this.isRunning = true
 
-      // 旁路挂载时间线捕获：订阅 SystemBus 全量事件写入 EventLog。
-      // 失败仅 warn，不影响主流程。
+      // 旁路挂载时间线捕获：直接绑到 runtime.onAny，拿到 SystemBus 全量事件
+      // （包含 source==='environment' 的 tool_*/text_* 流式事件，facade 过滤掉的那些）。
+      // KNUTH-FEAT 2026-07-04: 见 plan 方案 A。
       try {
         const { getEventLog, attachEventLogger } = await import('@promptx/mcp-server/timeline')
-        this.detachTimeline = attachEventLogger(this.agentx, getEventLog())
-        logger.info('Timeline event capture attached')
+        this.detachTimeline = built.attachTimeline(attachEventLogger, getEventLog())
+        logger.info('Timeline event capture attached (onAny mode)')
       } catch (err) {
         logger.warn('Failed to attach timeline capture (non-fatal):', String(err))
       }
@@ -299,8 +312,28 @@ export class AgentXService {
         this.detachTimeline = null
       }
 
-      await this.agentx.dispose()
+      // KNUTH-FEAT 2026-07-04: 显式按 facade.dispose 的顺序释放
+      // wsServer → runtime → eventQueue（参见 createAgentXRuntime.facade.dispose）。
+      // 直接走子引用，让调用栈上释放步骤可见，便于排查 stop 阶段异常。
+      try {
+        await this.wsServer?.dispose()
+      } catch (err) {
+        logger.warn('Failed to dispose wsServer:', String(err))
+      }
+      try {
+        await this.runtime?.dispose()
+      } catch (err) {
+        logger.warn('Failed to dispose runtime:', String(err))
+      }
+      try {
+        await this.eventQueue?.close()
+      } catch (err) {
+        logger.warn('Failed to close eventQueue:', String(err))
+      }
       this.agentx = null
+      this.runtime = null
+      this.wsServer = null
+      this.eventQueue = null
       this.isRunning = false
       logger.info('AgentX service stopped')
     } catch (error) {
