@@ -3,12 +3,22 @@ const logger = require('@promptx/logger')
 
 /**
  * RoleListArea - 角色列表展示区域
+ *
+ * KNUTH-FEAT 2026-07-04: archiveFilter 选项
+ * - showArchived: 当为 true 时，archived 角色仍会渲染（带 ⚠️ [archived] 标记）
+ * - onlyArchived: 当为 true 时，仅渲染 archived 角色（也会带标记，保持一致）
+ *
+ * 正常过滤由 DiscoverCommand.loadRoleRegistry 完成，本类只负责标记渲染。
  */
 class RoleListArea extends BaseArea {
-  constructor(roleCategories, directoryData = null) {
+  constructor(roleCategories, directoryData = null, archiveFilter = {}) {
     super('ROLE_LIST_AREA')
     this.roleCategories = roleCategories
     this.directoryData = directoryData || { roles: [], organizations: [] }
+    this.archiveFilter = {
+      showArchived: !!archiveFilter.showArchived,
+      onlyArchived: !!archiveFilter.onlyArchived,
+    }
   }
 
   async render() {
@@ -27,19 +37,27 @@ class RoleListArea extends BaseArea {
       roles.sort((a, b) => a.id.localeCompare(b.id))
 
       roles.forEach(role => {
+        const archiveTag = role.archived ? '⚠️ [已归档] ' : ''
         if (role.version === 'v2') {
           const command = `action({ operation: "activate", role: "${role.id}" })`
           const orgInfo = this.getOrganizationInfo(role.id)
           if (orgInfo) {
-            content += `- \`${role.id}\` [V2]: ${role.name || '未命名角色'} (${orgInfo.org} - ${orgInfo.position}) → ${command}\n`
+            content += `- ${archiveTag}\`${role.id}\` [V2]: ${role.name || '未命名角色'} (${orgInfo.org} - ${orgInfo.position}) → ${command}\n`
           } else {
-            content += `- \`${role.id}\` [V2]: ${role.name || '未命名角色'} → ${command}\n`
+            content += `- ${archiveTag}\`${role.id}\` [V2]: ${role.name || '未命名角色'} → ${command}\n`
           }
         } else {
           const command = `action("${role.id}")`
-          content += `- \`${role.id}\`: ${role.name || role.title || '未命名角色'} → ${command}\n`
+          content += `- ${archiveTag}\`${role.id}\`: ${role.name || role.title || '未命名角色'} → ${command}\n`
         }
       })
+    }
+
+    // KNUTH-FEAT 2026-07-04: onlyArchived 时加顶提示
+    if (this.archiveFilter.onlyArchived) {
+      content = '\n📜 **仅显示已归档角色** — 默认 `discover` 不展示\n' + content
+    } else if (this.archiveFilter.showArchived) {
+      content = '\n📜 **包含已归档角色** — 带 ⚠️ 标记\n' + content
     }
 
     return content || '暂无可用角色'
@@ -64,7 +82,7 @@ class RoleListArea extends BaseArea {
     }
     return null
   }
-  
+
   getSourceIcon(source) {
     const icons = {
       'system': '📦',
@@ -74,7 +92,7 @@ class RoleListArea extends BaseArea {
     }
     return icons[source] || '📄'
   }
-  
+
   getSourceTitle(source) {
     const titles = {
       'system': '系统角色',

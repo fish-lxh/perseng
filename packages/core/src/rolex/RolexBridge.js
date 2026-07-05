@@ -42,7 +42,7 @@ function extractFeatureDescription (content) {
  * 所有 RoleX 导入必须使用 await import() 动态导入。
  */
 class RolexBridge {
-  static SEED_ROLES = ['nuwa', 'waiter', 'jiangziya']
+  static SEED_ROLES = ['nuwa', 'luban', 'dayu', 'jiangziya', 'sean']
 
   constructor () {
     this.platform = null
@@ -607,69 +607,171 @@ class RolexBridge {
   }
 
   /**
-   * 列出所有 V2 角色（供 discover 使用）
+   * 解析 `!census.list` 返回的文本为 ID 数组。
+   *
+   * rolexjs 1.6.3 census.list 每行格式：
+   *   `<id>(alias1, alias2) #tag` 或仅 `<id>`
+   * 空结果返回 "No <type> found." 或 "Society is empty."
+   *
+   * @param {string} text
+   * @returns {string[]} role IDs (trimmed, non-empty)
    */
-  async listV2Roles () {
+  static _parseCensusIds (text) {
+    if (typeof text !== 'string' || !text) return []
+    // 空态哨兵："No <type> found." / "Society is empty."
+    if (/^No .* found\./i.test(text) || /^Society is empty\./i.test(text)) return []
+    const ids = []
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      // 取第一个空白/paren/hash 之前的 token
+      const match = trimmed.match(/^([^\s(#]+)/)
+      if (match) {
+        const id = match[1].trim()
+        if (id) ids.push(id)
+      }
+    }
+    return ids
+  }
+
+  /**
+   * 列出所有 V2 角色（供 discover 使用）
+   *
+   * @param {Object} [options]
+   * @param {boolean} [options.includeRetired=false] - 是否包含已退休（archived）的个体
+   *
+   * KNUTH-FEAT 2026-07-04: 默认过滤掉 retired 个体；includeRetired=true 时返回全部。
+   * KNUTH-HARDENING 2026-07-05: rolexjs 1.6.3 已通过 `census.list { type: 'past' }`
+   * 暴露 retired/dissolved/abolished 实体清单，用 listRetiredV2() 减去实现精准过滤。
+   */
+  async listV2Roles ({ includeRetired = false } = {}) {
     if (process.env.PERSENG_ENABLE_V2 === '0') return []
     try {
       await this.ensureInitialized()
 
-      // RoleX 1.1.0: census.list 返回渲染后的字符串，不是数组
-      // 使用 type='individual' 参数获取纯文本个体列表
       const roles = []
 
       try {
         const censusResult = await this.rolex.direct('!census.list', { type: 'individual' })
         logger.info('[RolexBridge] Census individual result:', censusResult)
 
-        if (typeof censusResult === 'string' && censusResult && !censusResult.startsWith('No ')) {
-          // 格式: "id (alias1, alias2) #tag" 或仅 "id"，每行一个
-          const lines = censusResult.split('\n').filter(l => l.trim())
-          for (const line of lines) {
-            // 提取 ID：第一个空格、'(' 或 '#' 之前的内容
-            const match = line.match(/^([^\s(#]+)/)
-            if (match) {
-              const id = match[1].trim()
-              if (id) {
-                const isSeed = RolexBridge.SEED_ROLES.includes(id)
-                // KNUTH-FIX 2026-07-04: 之前 description 硬编码 ''，UI 显示"暂无描述"。
-                // 现在优先从 Gherkin Feature 文件 scrape（Persona.identity.feature），
-                // 如果文件不存在则用占位文字 "V2 角色 · {id}"（不再空白）。
-                const featurePath = path.join(this.rolexRoot, 'roles', id, 'identity', 'persona.identity.feature')
-                let description = ''
-                try {
-                  if (await fs.pathExists(featurePath)) {
-                    const content = await fs.readFile(featurePath, 'utf-8')
-                    description = extractFeatureDescription(content)
-                  }
-                } catch {
-                  // 文件不可读忽略
-                }
-                if (!description) description = `V2 角色 · ${id}`
+        const ids = RolexBridge._parseCensusIds(censusResult)
 
-                roles.push({
-                  id,
-                  name: id,
-                  description,
-                  source: isSeed ? 'system' : 'rolex',
-                  version: 'v2',
-                  protocol: 'role'
-                })
-              }
+        // KNUTH-HARDENING 2026-07-05: 拉取 past 集合做退役过滤
+        let retiredIds = new Set()
+        if (!includeRetired && ids.length > 0) {
+          retiredIds = await this._getRetiredIdSet()
+        }
+
+        for (const id of ids) {
+          if (retiredIds.has(id)) continue
+          const isSeed = RolexBridge.SEED_ROLES.includes(id)
+          // KNUTH-FIX 2026-07-04: 之前 description 硬编码 ''，UI 显示"暂无描述"。
+          // 现在优先从 Gherkin Feature 文件 scrape（Persona.identity.feature），
+          // 如果文件不存在则用占位文字 "V2 角色 · {id}"（不再空白）。
+          const featurePath = path.join(this.rolexRoot, 'roles', id, 'identity', 'persona.identity.feature')
+          let description = ''
+          try {
+            if (await fs.pathExists(featurePath)) {
+              const content = await fs.readFile(featurePath, 'utf-8')
+              description = extractFeatureDescription(content)
             }
+          } catch {
+            // 文件不可读忽略
           }
-        } else {
-          logger.info('[RolexBridge] Census returned empty or no individuals:', censusResult)
+          if (!description) description = `V2 角色 · ${id}`
+
+          roles.push({
+            id,
+            name: id,
+            description,
+            source: isSeed ? 'system' : 'rolex',
+            version: 'v2',
+            protocol: 'role',
+            archived: retiredIds.has(id),
+          })
         }
       } catch (censusError) {
         logger.warn('[RolexBridge] Census query failed:', censusError)
       }
 
-      logger.info(`[RolexBridge] Found ${roles.length} V2 roles from database`)
+      logger.info(`[RolexBridge] Found ${roles.length} V2 roles from database (includeRetired=${includeRetired})`)
       return roles
     } catch (error) {
       logger.error('[RolexBridge] Failed to list V2 roles:', error)
       return []
+    }
+  }
+
+  /**
+   * 列出所有已 retire 的 V2 个体（discover --archived 时调）。
+   *
+   * KNUTH-HARDENING 2026-07-05: rolexjs 1.6.3 暴露 `census.list { type: 'past' }`
+   * 可查询 retired/dissolved/abolished 实体。返回的字符串可能同时含
+   * 已退休个体、解散组织、废除职位 —— 我们只关心 individual 部分。
+   *
+   * 返回角色对象数组（与 listV2Roles 形状对齐），附带 `archived: true` 标记
+   * 让 RoleListArea 直接渲染 ⚠️ 标签。
+   *
+   * 失败兜底：census 查询失败或解析异常时返回 []，DiscoverCommand 默认
+   * 仍能跑（只是看不到 archived V2 角色）。
+   */
+  async listRetiredV2 () {
+    if (process.env.PERSENG_ENABLE_V2 === '0') return []
+    try {
+      await this.ensureInitialized()
+
+      const censusResult = await this.rolex.direct('!census.list', { type: 'past' })
+      logger.info('[RolexBridge] Census past result:', censusResult)
+
+      const ids = RolexBridge._parseCensusIds(censusResult)
+      if (ids.length === 0) return []
+
+      // census.list type=past 返回的是 past 节点 id（与 individual id 一致，
+      // 来自 rt.transform rehire 的 alias）。但目前不能保证全是 individual，
+      // 所以保守只对 known individual 子集做转换。
+      const activeRoles = await this.listV2Roles({ includeRetired: true })
+      const activeById = new Map(activeRoles.map(r => [r.id, r]))
+
+      const retired = []
+      for (const id of ids) {
+        const active = activeById.get(id)
+        if (active) {
+          retired.push({ ...active, archived: true })
+        } else {
+          // past 列表里的 id 但不在 active 里：仍以 minimal 角色对象返回
+          retired.push({
+            id,
+            name: id,
+            description: `V2 角色 · ${id} (已归档)`,
+            source: 'rolex',
+            version: 'v2',
+            protocol: 'role',
+            archived: true,
+          })
+        }
+      }
+      logger.info(`[RolexBridge] Found ${retired.length} retired V2 roles`)
+      return retired
+    } catch (error) {
+      logger.warn('[RolexBridge] listRetiredV2 failed:', error)
+      return []
+    }
+  }
+
+  /**
+   * 内部：获取 retired V2 IDs 集合（Set）。
+   *
+   * KNUTH-HARDENING 2026-07-05: listV2Roles 做精准退役过滤时复用。
+   * census.list type=past 解析失败时返回空集（保守不过滤）。
+   */
+  async _getRetiredIdSet () {
+    try {
+      const censusResult = await this.rolex.direct('!census.list', { type: 'past' })
+      return new Set(RolexBridge._parseCensusIds(censusResult))
+    } catch (error) {
+      logger.warn('[RolexBridge] _getRetiredIdSet failed (will not filter retired):', error)
+      return new Set()
     }
   }
 

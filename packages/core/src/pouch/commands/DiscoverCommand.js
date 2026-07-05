@@ -7,11 +7,13 @@ const fs = require('fs-extra')
 const path = require('path')
 const os = require('os')
 const { getGlobalResourceManager } = require('../../resource')
+const { RoleLifecycle } = require('../../resource/lifecycle/RoleLifecycle')
 const ProjectManager = require('~/project/ProjectManager')
 const { getGlobalProjectManager } = require('~/project/ProjectManager')
 const ProjectDiscovery = require('../../project/ProjectDiscovery')
 const UserDiscovery = require('../../resource/discovery/UserDiscovery')
 const { getRolexBridge } = require('../../rolex/RolexBridge')
+const { parseDiscoverOptions } = require('./discoverOptions')
 const logger = require('@promptx/logger')
 
 /**
@@ -31,11 +33,16 @@ class DiscoverCommand extends BasePouchCommand {
    * 组装Areas
    */
   async assembleAreas(args) {
+    // KNUTH-FEAT 2026-07-04: 解析 --all / --include-archived / --archived 三参
+    const opts = parseDiscoverOptions(args)
+    const showArchived = opts.all || opts.includeArchived
+    const onlyArchived = opts.archived
+
     // 首先刷新所有资源
     await this.refreshAllResources()
 
-    // 加载角色和工具
-    const roleRegistry = await this.loadRoleRegistry()
+    // 加载角色和工具（带 archived 上下文）
+    const roleRegistry = await this.loadRoleRegistry({ showArchived, onlyArchived })
     const toolRegistry = await this.loadToolRegistry()
 
     // 获取 V2 角色的组织信息
@@ -48,11 +55,11 @@ class DiscoverCommand extends BasePouchCommand {
     // 统计信息
     const stats = this.calculateStats(roleCategories, toolCategories)
 
-    // 注册Areas
+    // 注册Areas（RoleListArea 现在拿 archiveFilter options 决定是否展示 archived 标签）
     const headerArea = new DiscoverHeaderArea(stats)
     this.registerArea(headerArea)
 
-    const roleArea = new RoleListArea(roleCategories, directoryData)
+    const roleArea = new RoleListArea(roleCategories, directoryData, { showArchived, onlyArchived })
     this.registerArea(roleArea)
 
     const toolArea = new ToolListArea(toolCategories)
@@ -211,9 +218,10 @@ class DiscoverCommand extends BasePouchCommand {
 
   /**
    * 加载角色注册表
-   * @returns {Promise<Object>} 角色注册信息（按来源分类）
+   * @param {Object} [filterOpts] - { showArchived, onlyArchived }
+   * @returns {Promise<Object>} 角色注册信息（按来源分类，附带 archived 标记）
    */
-  async loadRoleRegistry () {
+  async loadRoleRegistry (filterOpts = {}) {
     logger.info('[DiscoverCommand] Loading role registry...')
 
     // 资源刷新已经在 assembleAreas 中的 refreshAllResources 完成
@@ -229,16 +237,30 @@ class DiscoverCommand extends BasePouchCommand {
       registry[role.id] = role
     })
 
-    logger.info(`[DiscoverCommand] Found ${Object.keys(registry).length} roles`)
+    // KNUTH-FEAT 2026-07-04: 加载已归档的 V1 IDs 用于标记归档状态
+    const archivedV1Ids = new Set(await RoleLifecycle.listArchivedV1())
+    filteredRoles.forEach(role => {
+      if (archivedV1Ids.has(role.id)) {
+        registry[role.id].archived = true
+      }
+    })
+
+    logger.info(`[DiscoverCommand] Found ${Object.keys(registry).length} roles (${archivedV1Ids.size} archived V1)`)
 
     // 合并 V2 角色（RoleX）
     // KNUTH-FIX 2026-07-04: 之前 `registry[role.id] = {...role, version: 'v2'}` 会用 V2 物理替换同 ID 的 V1 role，
     // 导致 7/8 个系统级 V1 role 在 UI 消失、只剩 1 个 jiangziya。修复：V2 一律走 `v2:` 前缀，让 V1/V2 并存。
+    // KNUTH-FEAT 2026-07-04: 传递 includeRetired 由 filterOpts 决定
     try {
       const bridge = getRolexBridge()
-      const v2Roles = await bridge.listV2Roles()
+      const showArchived = !!filterOpts.showArchived
+      const onlyArchived = !!filterOpts.onlyArchived
+      const v2Roles = onlyArchived
+        ? await bridge.listRetiredV2()
+        : await bridge.listV2Roles({ includeRetired: showArchived })
       v2Roles.forEach(role => {
         // 不再覆盖 V1（包括 ID 重名也走 v2: 前缀保持 V1 可见）
+        // KNUTH-HARDENING 2026-07-05: 保留 role.archived 字段供 RoleListArea 渲染 ⚠️
         registry[`v2:${role.id}`] = { ...role, version: 'v2' }
       })
       if (v2Roles.length > 0) {
@@ -249,7 +271,23 @@ class DiscoverCommand extends BasePouchCommand {
       logger.debug('[DiscoverCommand] RoleX not available, skipping V2 roles:', error.message)
     }
 
-    return registry
+    // KNUTH-FEAT 2026-07-04: 按归档状态过滤
+    // - default (showArchived=false, onlyArchived=false) → 排除 archived
+    // - showArchived=true → 全部通过，role.archived 字段保留用于渲染标记
+    // - onlyArchived=true → 只保留 archived
+    const filteredRegistry = {}
+    Object.entries(registry).forEach(([id, role]) => {
+      const isArchived = !!role.archived
+      if (onlyArchived) {
+        if (isArchived) filteredRegistry[id] = role
+      } else if (!showArchived) {
+        if (!isArchived) filteredRegistry[id] = role
+      } else {
+        filteredRegistry[id] = role
+      }
+    })
+
+    return filteredRegistry
   }
 
   /**
