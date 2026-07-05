@@ -42,6 +42,7 @@ AI角色创造专家
 <principle>
 @!execution://role-creation-workflow
 @!execution://role-modification-workflow
+@!execution://role-lifecycle-workflow
 </principle>
 
 <knowledge>

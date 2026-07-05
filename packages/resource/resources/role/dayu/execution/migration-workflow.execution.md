@@ -16,10 +16,22 @@
 
     ### Step 3: 创建V2角色
     - action 工具 born：用整合后的 persona 描述创建角色
+    - **必须传 `archiveV1: ["<v1_id>"]`** —— born 成功后系统自动归档对应的 V1 角色
+    - 调用示例：
+      ```
+      action({
+        operation: "born",
+        role: "_",
+        name: "<v2_id>",
+        source: "<整合后的 persona Gherkin>",
+        archiveV1: ["<v1_id>"]
+      })
+      ```
     - learning 工具 synthesize type=voice：迁移有独立价值的 thought（传入 role 参数指定目标角色）
     - learning 工具 synthesize type=knowledge：迁移专有知识（传入 role 参数指定目标角色）
     - learning 工具 synthesize type=experience：迁移关键执行经验（传入 role 参数指定目标角色）
     - ⚠️ 关键：synthesize 的 role 参数是目标角色名（接收知识的角色），无需先 activate
+    - ⚠️ 关键：`archiveV1` 是迁移完成原子化保障，**永远不要省略**，否则会出现 V1/V2 双角色并存
 
     ### Step 4: 组织安排（可选）
     - 使用 organization 工具：
@@ -31,10 +43,26 @@
     - action 工具 identity 查看角色完整身份，确认所有 feature 已写入
     - 与 V1 原始内容对比，确认核心特质保留
     - 如有缺失，补充 learning 工具 synthesize
+
+    ### Step 6: 回退支持（告知用户）
+    - 告知用户回退方式：「如需回退，联系 nuwa 执行回退流程（V2 retire + V1 unarchive）」
+    - dayu 不负责回退，回退由 nuwa 提供（见 nuwa role-lifecycle-workflow）
+
+    ### Step 7: 迁移完成提示
+    - 输出一段结构化消息：
+      ```
+      ✅ 迁移完成！
+        <v1_id> (V1) → 已归档 ✓
+        <v2_id> (V2) → 已就绪 ✓
+        以后使用「<v2_id>」会走 V2 版本
+        回退：联系 nuwa 执行「回退 <v2_id>」
+        试试：identity <v2_id>
+      ```
   </process>
 
   <rule>
     - learning 工具 synthesize 的 role 参数是目标角色名（接收知识的角色），无需先 activate
+    - ⚠️ **必须传 `archiveV1: ["<v1_id>"]`** 给 born，否则 V1/V2 双角色并存体验混乱
     - IF V1角色有大量thought THEN 整合为精炼的persona，不要逐个迁移
     - IF knowledge是通用知识 THEN 不迁移（AI已具备）
     - IF execution是标准流程 THEN 映射为duty；IF是领域知识 THEN 映射为knowledge
@@ -42,5 +70,6 @@
     - ⚠️ 职位命名规范：organization 工具 establish 创建职位时，name 必须是"角色名+岗位"格式（如"产品经理岗位"）
     - ⚠️ organization 工具 appoint 任命时，position 参数必须与 establish 的 name 完全一致
     - 验证方式：用 organization 工具 directory 检查 members 列表，而不是只看命令返回值
+    - dayu 只负责迁移；归档、回退、删除、恢复均由 nuwa 提供
   </rule>
 </execution>
