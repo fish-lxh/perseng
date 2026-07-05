@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
-import { Clock, CheckCircle2, XCircle } from "lucide-react"
+import { Clock, CheckCircle2, XCircle } from "@/lib/crisp-icons"
 import type { ExecLogEntry } from "./ToolDetailPanel"
 
 type Props = {

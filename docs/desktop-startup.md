@@ -8,6 +8,8 @@
 |---|---|
 | 本地开发、热重载、调试 | [desktop-startup-dev.md](./desktop-startup-dev.md) |
 | 生产打包 / 安装包 / 自动更新 | [desktop-startup-prod.md](./desktop-startup-prod.md) |
+| **二进制构建（electron-builder 详细流程）** | [desktop-binary-build.md](./desktop-binary-build.md) |
+| CLI 启动与构建 | [cli-startup.md](./cli-startup.md) |
 | 活动事件流时间线（架构 + UI + 调试） | [desktop-timeline.md](./desktop-timeline.md) |
 
 ## 与飞书服务的关系

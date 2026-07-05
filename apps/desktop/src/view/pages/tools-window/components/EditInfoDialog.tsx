@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Loader2, Save, X } from "lucide-react"
+import { Loader2, Save, X } from "@/lib/crisp-icons"
 
 type Props = {
   name: string
