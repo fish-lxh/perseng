@@ -11,6 +11,9 @@ const ResourceManager = require('./resourceManager')
 // 核心组件
 const ResourceProtocolParser = require('./resourceProtocolParser')
 
+// 生命周期管理
+const RoleLifecycle = require('./lifecycle/RoleLifecycle')
+
 // 数据类型
 const {
   LoadingSemantics,
@@ -57,6 +60,9 @@ module.exports = {
 
   // 核心组件
   ResourceProtocolParser,
+
+  // 生命周期管理（角色归档/恢复）
+  RoleLifecycle,
 
   // 数据类型
   LoadingSemantics,
