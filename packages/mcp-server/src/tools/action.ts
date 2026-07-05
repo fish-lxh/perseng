@@ -28,7 +28,7 @@ Use \`version\` parameter to force a specific version: \`"v1"\` for DPML, \`"v2"
 | luban | 鲁班 | ToolX tool development |
 | nuwa | 女娲 | AI role creation |
 | sean | Sean | Product decisions |
-| writer | Writer | Professional writing |
+| jiangziya | 姜子牙 | AI role design & industry transformation |
 | dayu | 大禹 | Role migration & org management |
 
 > System roles require exact ID match. Use \`discover\` to list all available roles.
@@ -84,7 +84,7 @@ After activating a V2 role, use these tools for further operations:
 - Use \`discover\` first when a role is not found`;
 
   const operationEnum = enableV2
-    ? ['activate', 'born', 'identity']
+    ? ['activate', 'born', 'identity', 'archive', 'unarchive', 'delete']
     : ['activate'];
 
   return {
@@ -97,7 +97,7 @@ After activating a V2 role, use these tools for further operations:
           type: 'string',
           enum: operationEnum,
           description: enableV2
-            ? 'Operation: activate (default), born (create V2 role), identity (view role info)'
+            ? 'Operation: activate (default), born (create V2 role), identity (view role info), archive (archive role), unarchive (restore archived role)'
             : 'Operation type. Default: activate.'
         },
         role: {
@@ -122,12 +122,40 @@ After activating a V2 role, use these tools for further operations:
             type: 'string',
             enum: ['v1', 'v2'],
             description: 'Force role version: "v1" for DPML, "v2" for RoleX. Auto-detected if omitted.'
+          },
+          // KNUTH-FEAT 2026-07-04: 迁移完成后自动归档对应的 V1 角色
+          archiveV1: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'V1 role IDs to auto-archive after successful born (migration completion)'
+          },
+          // KNUTH-FEAT 2026-07-04: archive / unarchive 操作的批量角色 ID 列表
+          // 无前缀 = V1（按 ~/.perseng/resource/role/<id>），"v2:" 前缀 = V2 bridge.retire/rehire
+          roleIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Role IDs to archive/unarchive (batch). Use "v2:" prefix for V2 roles.'
+          },
+          // KNUTH-HARDENING 2026-07-05: 物理删除 (force)：默认拒绝系统角色，true 绕过护栏
+          force: {
+            type: 'boolean',
+            description: 'Allow deleting system-protected roles (escape hatch). Use with extreme caution.'
           }
         } : {})
       },
       required: ['role']
     },
-    handler: async (args: { role: string; operation?: string; roleResources?: string; name?: string; source?: string; version?: string }) => {
+    handler: async (args: {
+      role: string;
+      operation?: string;
+      roleResources?: string;
+      name?: string;
+      source?: string;
+      version?: string;
+      archiveV1?: string[];
+      roleIds?: string[];
+      force?: boolean;
+    }) => {
       const operation = args.operation || 'activate';
 
       // V2 disabled: always use V1
@@ -135,8 +163,8 @@ After activating a V2 role, use these tools for further operations:
         return activateV1(args);
       }
 
-      // born / identity → 直接走 RoleX V2 路径
-      if (operation === 'born' || operation === 'identity') {
+      // born / identity / archive / unarchive / delete → 走 RoleX 路径（统一通过 dispatcher）
+      if (operation === 'born' || operation === 'identity' || operation === 'archive' || operation === 'unarchive' || operation === 'delete') {
         const core = await import('@promptx/core');
         const coreExports = core.default || core;
         const { RolexActionDispatcher } = (coreExports as any).rolex;

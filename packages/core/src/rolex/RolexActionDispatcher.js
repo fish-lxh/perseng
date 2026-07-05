@@ -1,4 +1,5 @@
 const { getRolexBridge } = require('./RolexBridge')
+const RoleLifecycle = require('../resource/lifecycle/RoleLifecycle')
 const logger = require('@promptx/logger')
 
 /**
@@ -93,6 +94,14 @@ class RolexActionDispatcher {
         return this._require(args)
       case 'abolish':
         return this._abolish(args)
+      // KNUTH-FEAT 2026-07-04: 跨 V1/V2 归档/恢复（统一接口）
+      case 'archive':
+        return this._archive(args)
+      case 'unarchive':
+        return this._unarchive(args)
+      // KNUTH-HARDENING 2026-07-05: 物理删除（不可恢复）— 受系统角色护栏保护
+      case 'delete':
+        return this._delete(args)
       default:
         throw new Error(`Unknown RoleX operation: ${operation}`)
     }
@@ -105,7 +114,27 @@ class RolexActionDispatcher {
 
   async _born (args) {
     if (!args.name) throw new Error('name is required for born operation')
-    return this.bridge.born(args.name, args.source)
+    const bornResult = await this.bridge.born(args.name, args.source)
+
+    // KNUTH-FEAT 2026-07-04: 迁移完成原子化 —— born 成功后自动归档对应的 V1 角色。
+    // 单条归档失败不影响 born 结果（V2 已创建，V1 归档是可恢复的标记）。
+    if (Array.isArray(args.archiveV1) && args.archiveV1.length > 0) {
+      const archiveResults = await RoleLifecycle.archiveBatch(args.archiveV1)
+      const failed = archiveResults.filter(r => !r.ok)
+      if (failed.length > 0) {
+        logger.warn(
+          `[RolexActionDispatcher] born "${args.name}" succeeded but ${failed.length}/${archiveResults.length} V1 archive failed:`,
+          failed,
+        )
+      } else {
+        logger.info(
+          `[RolexActionDispatcher] born "${args.name}" → auto-archived ${archiveResults.length} V1 role(s): ${args.archiveV1.join(', ')}`,
+        )
+      }
+      return { ...bornResult, archiveV1Results: archiveResults }
+    }
+
+    return bornResult
   }
 
   async _identity (args) {
@@ -277,6 +306,86 @@ class RolexActionDispatcher {
   async _abolish (args) {
     if (!args.position) throw new Error('position is required for abolish')
     return this.bridge.abolish(args.position)
+  }
+
+  // ---- 跨 V1/V2 归档/恢复（走 RoleLifecycle） ----
+
+  /**
+   * 批量归档角色。
+   *
+   * 输入：args.roleIds (string[])，无前缀 = V1，"v2:" 前缀 = V2
+   * 输出：{ operation: 'archive', results: Array<{ version, id, ok, error? }> }
+   */
+  async _archive (args) {
+    if (!Array.isArray(args.roleIds) || args.roleIds.length === 0) {
+      throw new Error('roleIds (non-empty array) is required for archive operation')
+    }
+    const results = await RoleLifecycle.archiveBatch(args.roleIds)
+    const failures = results.filter(r => !r.ok)
+    if (failures.length > 0) {
+      logger.warn(
+        `[RolexActionDispatcher] archive ${failures.length}/${results.length} failed:`,
+        failures,
+      )
+    }
+    return { operation: 'archive', total: results.length, failed: failures.length, results }
+  }
+
+  /**
+   * 批量取消归档。
+   */
+  async _unarchive (args) {
+    if (!Array.isArray(args.roleIds) || args.roleIds.length === 0) {
+      throw new Error('roleIds (non-empty array) is required for unarchive operation')
+    }
+    const results = await RoleLifecycle.unarchiveBatch(args.roleIds)
+    const failures = results.filter(r => !r.ok)
+    if (failures.length > 0) {
+      logger.warn(
+        `[RolexActionDispatcher] unarchive ${failures.length}/${results.length} failed:`,
+        failures,
+      )
+    }
+    return { operation: 'unarchive', total: results.length, failed: failures.length, results }
+  }
+
+  /**
+   * KNUTH-HARDENING 2026-07-05: 物理删除（不可恢复）。
+   *
+   * 与 archive 区分：archive = 软删除可恢复；delete = 硬删除不可恢复。
+   * 默认拒绝删除系统保护角色（luban/nuwa/dayu/jiangziya/sean），
+   * `args.force === true` 时可绕过。
+   *
+   * 输入：args.roleIds (string[]), args.force (boolean 可选)
+   * 输出：{ operation: 'delete', total, failed, protected, results }
+   */
+  async _delete (args) {
+    if (!Array.isArray(args.roleIds) || args.roleIds.length === 0) {
+      throw new Error('roleIds (non-empty array) is required for delete operation')
+    }
+    const force = !!args.force
+    const results = await RoleLifecycle.deleteBatch(args.roleIds, { force })
+    const failures = results.filter(r => !r.ok)
+    const protectedCount = results.filter(r => r.protected).length
+    if (protectedCount > 0 && !force) {
+      logger.warn(
+        `[RolexActionDispatcher] delete denied for ${protectedCount} protected role(s) (force=false). Pass force=true to override.`,
+      )
+    }
+    if (failures.length > 0) {
+      logger.warn(
+        `[RolexActionDispatcher] delete ${failures.length}/${results.length} failed:`,
+        failures,
+      )
+    }
+    return {
+      operation: 'delete',
+      total: results.length,
+      failed: failures.length,
+      protected: protectedCount,
+      force,
+      results,
+    }
   }
 
   /**
