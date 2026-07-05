@@ -7,7 +7,10 @@ const fs = require('fs-extra')
 const path = require('path')
 const os = require('os')
 const { getGlobalResourceManager } = require('../../resource')
-const { RoleLifecycle } = require('../../resource/lifecycle/RoleLifecycle')
+// KNUTH-FIX 2026-07-05: RoleLifecycle.js 用 `module.exports = RoleLifecycle` 直接导出 class，
+// 不能用 `{ RoleLifecycle }` 解构（拆出来是 undefined），必须直接 require。
+// 详情见 role-lifecycle-import-bug 排查笔记。
+const RoleLifecycle = require('../../resource/lifecycle/RoleLifecycle')
 const ProjectManager = require('~/project/ProjectManager')
 const { getGlobalProjectManager } = require('~/project/ProjectManager')
 const ProjectDiscovery = require('../../project/ProjectDiscovery')
@@ -247,14 +250,17 @@ class DiscoverCommand extends BasePouchCommand {
 
     logger.info(`[DiscoverCommand] Found ${Object.keys(registry).length} roles (${archivedV1Ids.size} archived V1)`)
 
+    // KNUTH-FEAT 2026-07-04: 提前把 filter 提到 try 块外，避免 tsup/esbuild
+    // 把同名 const 缩减到 try 内部、随后 forEach 引用不到报 ReferenceError
+    const showArchived = !!filterOpts.showArchived
+    const onlyArchived = !!filterOpts.onlyArchived
+
     // 合并 V2 角色（RoleX）
     // KNUTH-FIX 2026-07-04: 之前 `registry[role.id] = {...role, version: 'v2'}` 会用 V2 物理替换同 ID 的 V1 role，
     // 导致 7/8 个系统级 V1 role 在 UI 消失、只剩 1 个 jiangziya。修复：V2 一律走 `v2:` 前缀，让 V1/V2 并存。
     // KNUTH-FEAT 2026-07-04: 传递 includeRetired 由 filterOpts 决定
     try {
       const bridge = getRolexBridge()
-      const showArchived = !!filterOpts.showArchived
-      const onlyArchived = !!filterOpts.onlyArchived
       const v2Roles = onlyArchived
         ? await bridge.listRetiredV2()
         : await bridge.listV2Roles({ includeRetired: showArchived })

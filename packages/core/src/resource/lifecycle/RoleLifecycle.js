@@ -486,7 +486,7 @@ let _bridgeFactory = null
 
 function _getRolexBridge () {
   if (_bridgeFactory) return _bridgeFactory()
-  const { getRolexBridge } = require('../../../rolex/RolexBridge.js')
+  const { getRolexBridge } = require('../../rolex/RolexBridge.js')
   return getRolexBridge()
 }
 
