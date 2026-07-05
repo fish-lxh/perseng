@@ -121,7 +121,7 @@ export class FeishuBot {
         },
       })
       if (res.code !== 0) {
-        logger.warn('[FeishuBot] Send failed:', res.code, res.msg)
+        logger.warn(`[FeishuBot] Send failed: code=${res.code} msg=${res.msg}`)
       }
     } catch (err: any) {
       logger.error('[FeishuBot] sendText error:', err.message)
@@ -143,7 +143,7 @@ export class FeishuBot {
     logger.info('[FeishuBot] handleIncoming data:', JSON.stringify(data, null, 2).slice(0, 1000))
 
     if (!this.running || !this.onMessage) {
-      logger.warn('[FeishuBot] handleIncoming skipped: running=', this.running, 'onMessage=', !!this.onMessage)
+      logger.warn(`[FeishuBot] handleIncoming skipped: running=${this.running} onMessage=${!!this.onMessage}`)
       return
     }
 

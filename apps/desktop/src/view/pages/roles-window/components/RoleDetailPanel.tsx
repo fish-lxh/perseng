@@ -9,7 +9,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Pencil, BookOpen, Layers, Brain, FileText, ChevronRight, ChevronDown, Save, Loader2, Target, Building2, Upload, Trash2, Download } from "lucide-react"
+import { Pencil, BookOpen, Layers, Brain, FileText, ChevronRight, ChevronDown, Save, Loader2, Target, Building2, Upload, Trash2, Download } from "@/lib/crisp-icons"
 import { toast } from "sonner"
 import { useEffect, useState, useCallback } from "react"
 import type { RoleItem } from "./RoleListPanel"

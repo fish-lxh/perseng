@@ -25,7 +25,7 @@
 
 import * as React from "react";
 import type { AgentX } from "agentxjs";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare } from "@/lib/crisp-icons";
 import { useTranslation } from "react-i18next";
 import { ListPane, type ListPaneItem } from "@/components/agentx-ui/components/pane";
 import {

@@ -9,7 +9,7 @@
  */
 
 import * as React from "react";
-import { Send, Hammer, Sparkles, Bot, Wrench, Users, GitBranch, AlertCircle, ExternalLink } from "lucide-react";
+import { Send, Hammer, Sparkles, Bot, Wrench, Users, GitBranch, AlertCircle, ExternalLink } from "@/lib/crisp-icons";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/components/agentx-ui/utils";
 import logo from "../../../../../../assets/icons/icon.png";

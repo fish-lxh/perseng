@@ -8,7 +8,7 @@
  */
 
 import * as React from "react";
-import { ImageIcon, X, Loader2 } from "lucide-react";
+import { ImageIcon, X, Loader2 } from "@/lib/crisp-icons";
 import { cn } from "@/components/agentx-ui/utils/utils";
 
 export interface ImageBlockProps {

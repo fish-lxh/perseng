@@ -1,5 +1,5 @@
 import * as React from "react";
-import { FileText } from "lucide-react";
+import { FileText } from "@/lib/crisp-icons";
 import { cn } from "@/components/agentx-ui/utils/utils";
 
 export interface JSONRendererProps {

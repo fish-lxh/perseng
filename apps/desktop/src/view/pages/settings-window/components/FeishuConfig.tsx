@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { Loader2, ExternalLink, Circle } from "lucide-react"
+import { Loader2, ExternalLink, Circle } from "@/lib/crisp-icons"
 import { toast } from "sonner"
 
 interface FeishuConfigData {

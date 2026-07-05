@@ -39,7 +39,7 @@ export class ElectronUpdater implements AppUpdater {
     this.stateMachine = new UpdateStateMachine()
     this.storage = new UpdaterStorage()
     this.initPromise = this.initializeUpdater().catch(error => {
-      logger.error('ElectronUpdater: Failed to initialize:', error)
+      logger.error('ElectronUpdater: Failed to initialize:', { err: error })
       throw error
     })
   }
@@ -66,9 +66,9 @@ export class ElectronUpdater implements AppUpdater {
         autoUpdater = (electronUpdater as any).autoUpdater
       }
       
-      logger.info('ElectronUpdater: autoUpdater loaded successfully:', !!autoUpdater)
+      logger.info(`ElectronUpdater: autoUpdater loaded successfully: ${!!autoUpdater}`)
     } catch (error) {
-      logger.error('ElectronUpdater: Failed to import electron-updater:', error)
+      logger.error('ElectronUpdater: Failed to import electron-updater:', { err: error })
       throw error
     }
     
@@ -170,7 +170,7 @@ export class ElectronUpdater implements AppUpdater {
     })
     
     autoUpdater.on('error', (error: Error) => {
-      logger.error('ElectronUpdater: Error occurred:', error)
+      logger.error('ElectronUpdater: Error occurred:', { err: error })
       const updateError = this.normalizeError(error)
       this.stateMachine.transition(UpdateState.ERROR)
       this.stateMachine.emit('error', updateError)
@@ -236,7 +236,7 @@ export class ElectronUpdater implements AppUpdater {
     
     setTimeout(() => {
       this.checkForUpdates().catch(error => {
-        logger.error('ElectronUpdater: Retry failed:', error)
+        logger.error('ElectronUpdater: Retry failed:', { err: error })
       })
     }, delay)
   }
@@ -248,7 +248,7 @@ export class ElectronUpdater implements AppUpdater {
     
     this.checkTimer = setInterval(() => {
       this.checkForUpdates().catch(error => {
-        logger.error('ElectronUpdater: Periodic check failed:', error)
+        logger.error('ElectronUpdater: Periodic check failed:', { err: error })
       })
     }, this.options.checkInterval)
   }
@@ -257,7 +257,7 @@ export class ElectronUpdater implements AppUpdater {
     // Wait for initialization to complete
     await this.initPromise
     
-    logger.info('ElectronUpdater: checkForUpdates called, isPackaged:', app.isPackaged)
+    logger.info(`ElectronUpdater: checkForUpdates called, isPackaged: ${app.isPackaged}`)
     
     if (!app.isPackaged) {
       logger.warn('ElectronUpdater: Running in development mode')
@@ -287,7 +287,7 @@ export class ElectronUpdater implements AppUpdater {
       }
     } catch (error) {
       logger.error('ElectronUpdater: Check for updates failed:', error instanceof Error ? error.message : String(error))
-      logger.error('ElectronUpdater: Error details:', error)
+      logger.error('ElectronUpdater: Error details:', { err: error })
       return {
         updateAvailable: false,
         error: error as Error
@@ -305,7 +305,7 @@ export class ElectronUpdater implements AppUpdater {
     try {
       await autoUpdater.downloadUpdate()
     } catch (error) {
-      logger.error('ElectronUpdater: Download failed:', error)
+      logger.error('ElectronUpdater: Download failed:', { err: error })
       throw error
     }
   }

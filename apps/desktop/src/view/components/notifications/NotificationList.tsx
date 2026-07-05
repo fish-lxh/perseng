@@ -9,8 +9,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Badge } from "@/components/ui/badge"
-import { Info, CheckCircle, AlertTriangle, XCircle, X, Check } from "lucide-react"
+import { Info, CheckCircle, AlertTriangle, XCircle, X, Check } from "@/lib/crisp-icons"
 import { Notification } from "./types"
 import { notificationService } from "./notificationService"
 import { cn } from "@/components/agentx-ui/utils/utils"
@@ -30,19 +29,6 @@ const getNotificationIcon = (type: Notification["type"]) => {
       return <AlertTriangle className="h-5 w-5 text-yellow-500" />
     case "error":
       return <XCircle className="h-5 w-5 text-red-500" />
-  }
-}
-
-const getNotificationBadgeVariant = (type: Notification["type"]) => {
-  switch (type) {
-    case "info":
-      return "default"
-    case "success":
-      return "default"
-    case "warning":
-      return "destructive"
-    case "error":
-      return "destructive"
   }
 }
 

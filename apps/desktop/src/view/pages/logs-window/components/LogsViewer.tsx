@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
-import { Trash, FileText, AlertCircle, Search } from "lucide-react"
+import { Trash, FileText, AlertCircle, Search } from "@/lib/crisp-icons"
 import { toast } from "sonner"
 import { useTranslation } from "react-i18next"
 

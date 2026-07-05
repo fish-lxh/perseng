@@ -10,7 +10,7 @@
 
 import * as React from "react";
 import type { AgentX } from "agentxjs";
-import { MessageSquare, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { MessageSquare, Pencil, Plus, Search, Trash2, X } from "@/lib/crisp-icons";
 import { useImages } from "@/components/agentx-ui/hooks";
 import { cn } from "@/components/agentx-ui/utils/utils";
 

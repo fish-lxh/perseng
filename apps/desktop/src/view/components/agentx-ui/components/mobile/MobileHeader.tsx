@@ -8,7 +8,7 @@
  */
 
 import * as React from "react";
-import { Menu, Plus } from "lucide-react";
+import { Menu, Plus } from "@/lib/crisp-icons";
 import { cn } from "@/components/agentx-ui/utils/utils";
 
 export interface MobileHeaderProps {

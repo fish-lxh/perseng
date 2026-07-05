@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Search, Loader2, ChevronRight, ChevronDown, Building2, Users } from "lucide-react"
+import { Search, Loader2, ChevronRight, ChevronDown, Building2, Users } from "@/lib/crisp-icons"
 import RoleAvatar from "./RoleAvatar"
 import { useState } from "react"
 

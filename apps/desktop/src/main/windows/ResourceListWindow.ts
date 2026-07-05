@@ -1,7 +1,6 @@
 import { BrowserWindow, IpcMainInvokeEvent, ipcMain, dialog } from 'electron'
 import { ResourceService } from '~/main/application/ResourceService'
 import * as path from 'path'
-import { pathToFileURL } from 'node:url'
 import { t } from '~/main/i18n'
 import {
   applyFramelessWindowChrome,
@@ -980,7 +979,7 @@ export class ResourceListWindow {
       roleResources?: string
     }) => {
       try {
-        const { id, type, source, roleResources } = payload || {}
+        const { id, type, roleResources } = payload || {}
 
         if (!id || !type) {
           return { success: false, message: t('resources.missingParams') }

@@ -1,7 +1,7 @@
 import * as React from "react"
 import { format } from "date-fns"
 import { zhCN, enUS } from "date-fns/locale"
-import { Calendar as CalendarIcon } from "lucide-react"
+import { Calendar as CalendarIcon } from "@/lib/crisp-icons"
 import { DayPicker } from "react-day-picker"
 import { useTranslation } from "react-i18next"
 

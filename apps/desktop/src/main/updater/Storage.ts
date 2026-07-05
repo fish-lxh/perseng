@@ -31,7 +31,8 @@ export class UpdaterStorage {
       await fs.mkdir(this.cachePath, { recursive: true })
       logger.info(`UpdaterStorage: Initialized at ${this.basePath}`)
     } catch (error) {
-      logger.error('UpdaterStorage: Failed to initialize:', error)
+      // KNUTH-FIX 2026-07-05: catch error 是 unknown，包成 { err } 喂给 pino meta（logger 第二参需 object|string）
+      logger.error('UpdaterStorage: Failed to initialize:', { err: error })
     }
   }
 
@@ -42,7 +43,7 @@ export class UpdaterStorage {
       await fs.rename(tempPath, this.statePath)
       logger.debug('UpdaterStorage: State saved')
     } catch (error) {
-      logger.error('UpdaterStorage: Failed to save state:', error)
+      logger.error('UpdaterStorage: Failed to save state:', { err: error })
     }
   }
 
@@ -52,7 +53,7 @@ export class UpdaterStorage {
       return JSON.parse(data)
     } catch (error) {
       if ((error as any).code !== 'ENOENT') {
-        logger.error('UpdaterStorage: Failed to load state:', error)
+        logger.error('UpdaterStorage: Failed to load state:', { err: error })
       }
       return null
     }
@@ -70,7 +71,7 @@ export class UpdaterStorage {
       )
       logger.info('UpdaterStorage: Cache cleared')
     } catch (error) {
-      logger.error('UpdaterStorage: Failed to clear cache:', error)
+      logger.error('UpdaterStorage: Failed to clear cache:', { err: error })
     }
   }
 

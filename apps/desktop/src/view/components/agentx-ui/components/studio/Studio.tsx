@@ -37,7 +37,7 @@
 
 import * as React from "react";
 import type { AgentX } from "agentxjs";
-import { ChevronsRight, FolderOpen } from "lucide-react";
+import { ChevronsRight, FolderOpen } from "@/lib/crisp-icons";
 import { useTranslation } from "react-i18next";
 import { AgentList } from "@/components/agentx-ui/components/container/AgentList";
 import { Chat } from "@/components/agentx-ui/components/container/Chat";

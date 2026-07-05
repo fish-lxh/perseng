@@ -14,7 +14,7 @@
  */
 
 import * as React from "react";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare } from "@/lib/crisp-icons";
 import { SpinnerIcon } from "@/components/icons";
 import { useTranslation } from "react-i18next";
 import type { AgentState } from "agentxjs";

@@ -8,7 +8,7 @@
  */
 
 import * as React from "react";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare } from "@/lib/crisp-icons";
 import { cn } from "@/components/agentx-ui/utils/utils";
 
 export interface MobileMessagePaneProps {

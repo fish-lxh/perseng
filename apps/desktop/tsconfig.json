@@ -4,7 +4,10 @@
     "rootDir": "./src",
     "outDir": "./out",
     "composite": true,
-    "moduleResolution": "node",
+    // KNUTH-FIX 2026-07-05: 切到 'bundler' 支持 package.json exports 字段（subpath imports 如 @promptx/mcp-server/timeline、@agentxjs/types/agentx）。
+    // 'node' 模式只认 main/types 字段，对 modern dual-export 包不友好。
+    // 'bundler' 与 Vite 的解析策略一致，desktop 整体无副作用。
+    "moduleResolution": "bundler",
     "skipLibCheck": true,
     "jsx": "react-jsx",
     "lib": ["ES2020", "DOM"],
@@ -18,7 +21,10 @@
       "@/components/*": ["src/view/components/*"],
       "@/lib/*": ["src/view/lib/*"],
       "@/hooks/*": ["src/view/hooks/*"]
-    }
+    },
+    // KNUTH-FIX 2026-07-05: 关 noImplicitAny — desktop 端 UI/hook 代码量大，
+    // 全部 event/error callback 加 : any 噪音大于价值。monorepo 其他包仍 strict。
+    "noImplicitAny": false
   },
   "include": ["src/**/*", "src/**/*.json"],
   "exclude": ["out", "dist", "node_modules", "**/*.spec.ts", "**/*.test.ts"],

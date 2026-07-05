@@ -22,7 +22,7 @@
 
 import * as React from "react";
 import { useState } from "react";
-import { ChevronDown, Loader2, CheckCircle2, XCircle, Wrench } from "lucide-react";
+import { ChevronDown, Loader2, CheckCircle2, XCircle, Wrench } from "@/lib/crisp-icons";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/components/agentx-ui/utils/utils";
 import type { ToolBlockData, ToolBlockStatus } from "../types";

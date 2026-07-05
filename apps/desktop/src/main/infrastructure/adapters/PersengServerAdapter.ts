@@ -12,7 +12,6 @@ let PersengMCPServer: any
 export class PersengServerAdapter implements IServerPort {
   private server: any = null
   private statusListeners: Set<(status: ServerStatus) => void> = new Set()
-  private currentStatus: ServerStatus = ServerStatus.STOPPED
 
   async start(config: ServerConfig): Promise<Result<void, ServerError>> {
     try {
@@ -187,7 +186,6 @@ export class PersengServerAdapter implements IServerPort {
   }
 
   private updateStatus(status: ServerStatus): void {
-    this.currentStatus = status
     this.statusListeners.forEach(listener => {
       try {
         listener(status)

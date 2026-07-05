@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react"
 import { useTranslation } from "react-i18next"
-import { Search, ChevronLeft, ChevronRight, Pencil, Trash2, Check, X } from "lucide-react"
+import { Search, ChevronLeft, ChevronRight, Pencil, Trash2, Check, X } from "@/lib/crisp-icons"
 
 type Engram = {
   id?: number

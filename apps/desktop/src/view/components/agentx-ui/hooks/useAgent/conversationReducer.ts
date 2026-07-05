@@ -249,7 +249,7 @@ function processHistoryMessages(messages: Message[]): {
       type: "assistant",
       id: `assistant_orphan_${Date.now()}`,
       messageIds: [],
-      timestamp: orphanToolCalls[0].timestamp,
+      timestamp: orphanToolCalls[0]!.timestamp,
       status: "completed",
       blocks,
     } as AssistantConversationData);

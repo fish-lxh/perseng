@@ -118,7 +118,7 @@ export class UpdateStateMachine {
       try {
         callback(data)
       } catch (error) {
-        logger.error(`UpdateStateMachine: Error in event listener for ${event}:`, error)
+        logger.error(`UpdateStateMachine: Error in event listener for ${event}:`, { err: error })
       }
     })
   }

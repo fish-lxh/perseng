@@ -33,7 +33,7 @@
  */
 
 import * as React from "react";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare } from "@/lib/crisp-icons";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/agentx-ui/components/element/EmptyState";
 import { cn } from "@/components/agentx-ui/utils/utils";

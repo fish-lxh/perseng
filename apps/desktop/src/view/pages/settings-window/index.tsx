@@ -25,7 +25,7 @@ import { FeishuConfig } from "./components/FeishuConfig"
 import { PlatformIntegration } from "./components/PlatformIntegration"
 // import { WechatConfig } from "./components/WechatConfig"
 import { AgentXProfilesConfig } from "./components/AgentXProfilesConfig"
-import { Loader2, Settings, Bot, RefreshCw, Wifi, AlertTriangle, Plug } from "lucide-react"
+import { Loader2, Settings, Bot, RefreshCw, Wifi, AlertTriangle, Plug } from "@/lib/crisp-icons"
 
 function GitWarningBanner() {
   const { t } = useTranslation()

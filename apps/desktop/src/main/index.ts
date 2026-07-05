@@ -3,7 +3,6 @@ import '~/main/polyfills'
 
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { TrayPresenter } from '~/main/tray/TrayPresenter'
-import { ResourceManager } from '~/main/ResourceManager'
 import { PersengServerAdapter } from '~/main/infrastructure/adapters/PersengServerAdapter'
 import { FileConfigAdapter } from '~/main/infrastructure/adapters/FileConfigAdapter'
 import { ElectronNotificationAdapter } from '~/main/infrastructure/adapters/ElectronNotificationAdapter'
@@ -23,14 +22,13 @@ import { scanPersengHome, querySqlite } from '~/main/services/DatabaseManager'
 import * as logger from '@promptx/logger'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
-import { mainI18n, t } from '~/main/i18n'
+import { mainI18n } from '~/main/i18n'
 import { ServerConfig } from '~/main/domain/entities/ServerConfig'
 import { ServerConfigManager } from '@promptx/config'
 import { migratePromptXHomeIfNeeded, getPersengHomeDir } from '~/main/utils/persengPaths'
 
 class PersengDesktopApp {
   private trayPresenter: TrayPresenter | null = null
-  private resourceManager: ResourceManager | null = null
   private serverPort: PersengServerAdapter | null = null
   private configPort: FileConfigAdapter | null = null
   private notificationPort: ElectronNotificationAdapter | null = null
@@ -117,11 +115,6 @@ class PersengDesktopApp {
     // Setup presentation layer
     logger.info('Setting up presentation layer...')
     this.setupPresentation(startUseCase, stopUseCase)
-
-    // Setup ResourceManager for roles and tools
-    logger.info('Setting up resource manager...')
-    this.resourceManager = new ResourceManager()
-    logger.info('Resource manager initialized')
 
     // Setup CognitionWindow for memory/cognition IPC
     new CognitionWindow()
@@ -641,9 +634,8 @@ class PersengDesktopApp {
         if (!filePath || !fs.existsSync(filePath)) {
           return { success: false, error: 'File not found' }
         }
-        const { shell } = await import('electron')
-        // showItemInFolder 在文件管理器中高亮文件
         const { shell: sh } = await import('electron')
+        // showItemInFolder 在文件管理器中高亮文件
         sh.showItemInFolder(filePath)
         return { success: true }
       } catch (error) {
@@ -1180,7 +1172,7 @@ process.on('uncaughtException', (error: Error) => {
   }
 })
 
-process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+process.on('unhandledRejection', (reason: any, _promise: Promise<any>) => {
   // Ignore EPIPE errors
   if (reason?.message && reason.message.includes('EPIPE')) {
     logger.debug('Ignoring unhandled EPIPE rejection:', reason.message)

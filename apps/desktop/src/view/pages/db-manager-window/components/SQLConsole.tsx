@@ -11,7 +11,7 @@
 
 import { lazy, Suspense, useState, useCallback, useEffect } from "react"
 import { useTranslation } from "react-i18next"
-import { X, Play, Loader2, AlertTriangle } from "lucide-react"
+import { X, Play, Loader2, AlertTriangle } from "@/lib/crisp-icons"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 

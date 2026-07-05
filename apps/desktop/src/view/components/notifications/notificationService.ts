@@ -1,4 +1,4 @@
-import { Notification, NotificationStore } from "./types"
+import { Notification } from "./types"
 
 const STORAGE_KEY = "promptx_notifications"
 const SHOWN_KEY = "promptx_notifications_shown"

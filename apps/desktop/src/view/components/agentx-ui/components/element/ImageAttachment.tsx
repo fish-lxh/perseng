@@ -1,5 +1,5 @@
 import * as React from "react";
-import { X, AlertCircle, Image as ImageIcon } from "lucide-react";
+import { X, AlertCircle, Image as ImageIcon } from "@/lib/crisp-icons";
 import { cn } from "@/components/agentx-ui/utils/utils";
 
 export interface ImageAttachmentProps {

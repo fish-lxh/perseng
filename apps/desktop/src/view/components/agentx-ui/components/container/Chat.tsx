@@ -110,7 +110,9 @@ function renderConversation(
 export function Chat({
   agentx,
   imageId,
-  agentName,
+  // KNUTH-FIX 2026-07-05: agentName 暂时解构但内部未使用（保留接口兼容），
+  // 加下划线前缀让 TS6133 不报错（团队 ESLint argsIgnorePattern='^_'）。
+  agentName: _agentName,
   onSave,
   showSaveButton = false,
   placeholder,

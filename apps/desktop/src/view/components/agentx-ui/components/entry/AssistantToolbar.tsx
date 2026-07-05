@@ -17,7 +17,7 @@
 
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { Copy, RefreshCw, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Copy, RefreshCw, ThumbsUp, ThumbsDown } from "@/lib/crisp-icons";
 import { cn } from "@/components/agentx-ui/utils/utils";
 import type { AssistantConversationStatus } from "./types";
 

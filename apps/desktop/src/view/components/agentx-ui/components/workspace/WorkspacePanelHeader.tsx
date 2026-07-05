@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { X } from "@/lib/crisp-icons";
 import { cn } from "@/components/agentx-ui/utils";
 import type { WorkspacePanelPlugin } from "./types";
 
@@ -56,11 +56,11 @@ export function WorkspacePanelHeader({
       <div className="flex items-center pl-2 border-l border-border/50 ml-1 shrink-0">
         <button
           onClick={onClose}
-          className="flex items-center justify-center w-8 h-8 rounded-md border-2 border-white/60 bg-slate-800/70 text-white transition-all hover:scale-110 hover:border-white hover:bg-red-500 hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex items-center justify-center w-4 h-4 rounded-sm border border-white/60 bg-slate-800/70 text-white transition-all hover:scale-110 hover:border-white hover:bg-red-500 hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           title="关闭面板"
           aria-label="Close panel"
         >
-          <X className="w-4 h-4" strokeWidth={3} />
+          <X className="w-2 h-2" strokeWidth={3} />
         </button>
       </div>
     </div>

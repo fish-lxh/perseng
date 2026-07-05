@@ -24,7 +24,7 @@ import {
   Settings2,
   RefreshCw,
   ChevronRight,
-} from "lucide-react"
+} from "@/lib/crisp-icons"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"

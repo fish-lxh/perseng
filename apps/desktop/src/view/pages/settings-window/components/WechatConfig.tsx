@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Copy, Terminal } from "lucide-react"
+import { Copy, Terminal } from "@/lib/crisp-icons"
 import { toast } from "sonner"
 
 function CommandBlock({ label, description, command, onCopy }: {

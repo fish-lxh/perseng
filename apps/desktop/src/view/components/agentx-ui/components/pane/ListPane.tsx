@@ -27,7 +27,7 @@
  */
 
 import * as React from "react";
-import { Plus, Trash2, Pencil, ChevronsLeft } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronsLeft } from "@/lib/crisp-icons";
 import { cn } from "@/components/agentx-ui/utils/utils";
 import { ListItem } from "@/components/agentx-ui/components/element/ListItem";
 import { SearchInput } from "@/components/agentx-ui/components/element/SearchInput";

@@ -72,7 +72,7 @@ export class ElectronNotificationAdapter implements INotificationPort {
     }
   }
 
-  private getIconForType(type: NotificationType): string | undefined {
+  private getIconForType(_type: NotificationType): string | undefined {
     // TODO: Return actual icon paths based on type
     // For now, let Electron use default icons
     return undefined

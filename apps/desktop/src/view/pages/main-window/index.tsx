@@ -15,7 +15,7 @@ import {
   SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { FileText, Settings, Pickaxe, MessageSquare, UsersRound, Plus, Upload, History, Database } from "lucide-react";
+import { FileText, Settings, Pickaxe, MessageSquare, UsersRound, Plus, Upload, History, Database } from "@/lib/crisp-icons";
 import { BellIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -212,7 +212,7 @@ function MainContent() {
           <div className="flex items-center gap-2 min-w-0 px-2 py-4">
             <img src={logo} alt="Perseng Logo" className="h-8 w-8 shrink-0" />
             {!isCollapsed && (
-              <span className="font-display-thin text-xs sm:text-sm md:text-base lg:text-lg truncate min-w-0 flex-1">
+              <span className="font-display-thin text-[0.5rem] sm:text-[0.5625rem] md:text-[0.625rem] lg:text-[0.75rem] truncate min-w-0 flex-1">
                 PERSENG
               </span>
             )}

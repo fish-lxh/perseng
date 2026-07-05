@@ -274,7 +274,10 @@ export class AgentXService {
       // KNUTH-FEAT 2026-07-04: 见 plan 方案 A。
       try {
         const { getEventLog, attachEventLogger } = await import('@promptx/mcp-server/timeline')
-        this.detachTimeline = built.attachTimeline(attachEventLogger, getEventLog())
+        // KNUTH-FIX 2026-07-05: attachEventLogger 的 EventSource/EventLog 类型 vs TimelineAttacher 的
+        // 局部 TimelineLogLike 接口结构不严格对齐（前者 log 字段更多），用 cast 兜底；
+        // 运行时合法（attachEventLogger 实际接受任何带 onAny/on 的 bus）。
+        this.detachTimeline = built.attachTimeline(attachEventLogger as any, getEventLog())
         logger.info('Timeline event capture attached (onAny mode)')
       } catch (err) {
         logger.warn('Failed to attach timeline capture (non-fatal):', String(err))

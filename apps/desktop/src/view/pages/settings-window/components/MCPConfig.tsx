@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
-import { Plus, Trash2, Pencil, Server, Loader2, Lock } from "lucide-react"
+import { Plus, Trash2, Pencil, Server, Loader2, Lock } from "@/lib/crisp-icons"
 
 interface MCPServerConfig {
   name: string
@@ -62,22 +62,6 @@ const DEFAULT_JSON_TEMPLATE = `{
   "command": "node",
   "args": ["/path/to/server.js"]
 }`
-
-// 示例模板
-const EXAMPLE_TEMPLATES = {
-  stdio: `{
-  "command": "npx",
-  "args": ["-y", "@anthropic/mcp-server-filesystem", "/path/to/dir"]
-}`,
-  http: `{
-  "type": "http",
-  "url": "http://127.0.0.1:5277/mcp"
-}`,
-  sse: `{
-  "type": "sse",
-  "url": "http://127.0.0.1:5277/sse"
-}`
-}
 
 export function MCPConfig() {
   const { t } = useTranslation()

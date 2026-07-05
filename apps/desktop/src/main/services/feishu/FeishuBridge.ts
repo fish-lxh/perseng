@@ -63,7 +63,7 @@ export class FeishuBridge {
 
       await this.bot.addReaction(msg.messageId, 'THUMBSUP').catch(() => {})
     } catch (err: any) {
-      logger.error('[FeishuBridge] Failed to forward message:', err.message, err.stack)
+      logger.error(`[FeishuBridge] Failed to forward message: ${err.message}\n${err.stack ?? ''}`)
     }
   }
 

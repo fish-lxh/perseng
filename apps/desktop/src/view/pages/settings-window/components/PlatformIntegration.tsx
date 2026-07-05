@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Check, Copy } from "lucide-react"
+import { Check, Copy } from "@/lib/crisp-icons"
 import { toast } from "sonner"
 
 const TRAE_CONFIG = `{

@@ -6,7 +6,7 @@
 
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, RefreshCw, Wrench, Upload, Trash2 } from "lucide-react";
+import { Loader2, RefreshCw, Wrench, Upload, Trash2 } from "@/lib/crisp-icons";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import {

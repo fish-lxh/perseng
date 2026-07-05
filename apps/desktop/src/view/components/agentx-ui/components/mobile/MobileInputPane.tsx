@@ -8,7 +8,7 @@
  */
 
 import * as React from "react";
-import { Send, Square } from "lucide-react";
+import { Send, Square } from "@/lib/crisp-icons";
 import { cn } from "@/components/agentx-ui/utils/utils";
 
 export interface MobileInputPaneProps {

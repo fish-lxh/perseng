@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Brain, GitFork, Link, Clock } from "lucide-react"
+import { Brain, GitFork, Link, Clock } from "@/lib/crisp-icons"
 
 type OverviewData = {
   engramCount: number

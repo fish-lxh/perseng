@@ -39,13 +39,8 @@ import * as logger from '@promptx/logger'
 import { createRuntime, RuntimeEnvironment } from '@agentxjs/runtime'
 import { createPersistence } from '@agentxjs/persistence'
 // KNUTH-FEAT 2026-07-04: `@agentxjs/persistence/sqlite` 子路径 export 走
-// package.json 的 "exports" map，而 desktop tsconfig moduleResolution="node"
-// （legacy）不识别 exports map，导致 typecheck 报 TS2307。
-// 同样的 subpath 解析问题已存在于
-// `apps/desktop/src/view/.../useAgent/index.ts:47`、
-// `useImages.ts:44` 等多处，我们保持同一处理方式：本文件接受遗留错误，
-// 实际运行时（electron-vite 打包 / 运行时）import 完全合法。
-// @ts-expect-error subpath legacy moduleResolution mismatch
+// package.json 的 "exports" map。2026-07-05 desktop tsconfig 切到
+// moduleResolution="bundler" 后 subpath 解析正常，此处不再需要 ts-expect-error。
 import { sqliteDriver } from '@agentxjs/persistence/sqlite'
 import { createQueue } from '@agentxjs/queue'
 import { WebSocketServer } from '@agentxjs/network'
@@ -249,9 +244,12 @@ export async function createAgentXRuntime(
     logger.info(`Connection subscribed to queue topic connectionId=${connectionId} topic=${topic}`)
   }
 
-  wsServer.onConnection((connection: ConnectionState['connection']) => {
+  wsServer.onConnection((connection) => {
+    // KNUTH-FIX 2026-07-05: bundler moduleResolution 暴露了 ChannelConnection 的真实类型，
+    // 之前 ConnectionState['connection'] 是本地狭窄类型，与 ChannelConnection 不结构兼容。
+    // 这里直接用 onConnection 给出的 connection，set 进 Map 时复用同一对象。
     connections.set(connection.id, {
-      connection,
+      connection: connection as ConnectionState['connection'],
       subscribedSessions: new Set(),
     })
     logger.info(`Client connected connectionId=${connection.id}`)

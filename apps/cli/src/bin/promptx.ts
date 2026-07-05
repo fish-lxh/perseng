@@ -14,7 +14,11 @@ import chalk from 'chalk'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import { MCPServerManager } from '@promptx/mcp-server'
+// KNUTH-FIX 2026-07-05: 旧的 MCPServerManager 符号在当前 mcp-server 包已不存在。
+// 实际可用的导出：PersengServerManager（= PersengMCPServer 的别名），
+// 它提供 .launch({transport, port, host, cors, debug})。
+// mcp-server 包完整 typecheck 重构留到下个 PR（task #78）。
+import { PersengServerManager } from '@promptx/mcp-server'
 import logger from '@promptx/logger'
 
 // Get package.json
@@ -95,7 +99,7 @@ program
 program
   .command('project [workspacePath]')
   .description('project pouch - manage project configuration and environment')
-  .action(async (workspacePath, options) => {
+  .action(async (workspacePath, _options) => {
     // If workspacePath is provided, pass it as workingDirectory parameter
     const args = workspacePath ? { workingDirectory: workspacePath } : {}
     await cli.execute('project', [args])
@@ -104,14 +108,24 @@ program
 program
   .command('discover')
   .description('discover pouch - discover and display all available AI roles and domain experts')
+  .option('-a, --all', 'Show all roles including archived (alias of --include-archived)')
+  .option('--include-archived', 'Include archived roles in the list')
+  .option('--archived', 'Show only archived roles (hidden by default)')
   .action(async (options) => {
-    await cli.execute('discover', [])
+    // KNUTH-FEAT 2026-07-04: 三参转发到 DiscoverCommand.assembleAreas
+    // PouchCLI.execute 接受 Array，约定 [0] 位置传 options 对象
+    const opts = {
+      all: !!options.all,
+      includeArchived: !!options.includeArchived,
+      archived: !!options.archived,
+    }
+    await cli.execute('discover', [opts])
   })
 
 program
   .command('action <role>')
   .description('action pouch - activate specific AI role, obtain professional prompts')
-  .action(async (role, options) => {
+  .action(async (role, _options) => {
     await ensureProjectRestored()
     await cli.execute('action', [role])
   })
@@ -119,21 +133,21 @@ program
 program
   .command('learn [resourceUrl]')
   .description('learn pouch - learn resource content of specified protocols (thought://, execution://, etc.)')
-  .action(async (resourceUrl, options) => {
+  .action(async (resourceUrl, _options) => {
     await cli.execute('learn', resourceUrl ? [resourceUrl] : [])
   })
 
 program
   .command('recall [query]')
   .description('recall pouch - AI actively retrieves relevant professional knowledge from memory')
-  .action(async (query, options) => {
+  .action(async (query, _options) => {
     await cli.execute('recall', query ? [query] : [])
   })
 
 program
   .command('remember [content...]')
   .description('remember pouch - AI actively internalizes knowledge and experience into memory system')
-  .action(async (content, options) => {
+  .action(async (content, _options) => {
     const args = content || []
     await cli.execute('remember', args)
   })
@@ -143,25 +157,30 @@ program
 program
   .command('toolx <arguments>')
   .description('toolx pouch - execute JavaScript functions in Perseng tool ecosystem (ToolX)')
-  .action(async (argumentsJson, options) => {
+  .action(async (argumentsJson, _options) => {
     try {
-      let args = {};
-      
+      // KNUTH-FIX 2026-07-05: 显式标注 Record<string, unknown>，避免 ts6133 + 让 tool_resource / parameters
+      // 这种动态键的访问有最小类型安全。
+      let args: Record<string, unknown> = {};
+
       // Support two calling methods:
       // 1. Object from MCP (called via cli.execute)
       // 2. JSON string from CLI (direct command line call)
-      if (typeof argumentsJson === 'object') {
-        args = argumentsJson;
+      if (typeof argumentsJson === 'object' && argumentsJson !== null) {
+        args = argumentsJson as Record<string, unknown>;
       } else if (typeof argumentsJson === 'string') {
         try {
-          args = JSON.parse(argumentsJson);
+          const parsed = JSON.parse(argumentsJson);
+          if (parsed && typeof parsed === 'object') {
+            args = parsed as Record<string, unknown>;
+          }
         } catch (error) {
           console.error('Parameter parsing error, please provide valid JSON format');
           console.error('Format example: \'{"tool_resource": "@tool://calculator", "parameters": {"operation": "add", "a": 25, "b": 37}}\'');
           process.exit(1);
         }
       }
-      
+
       // Validate required parameters
       if (!args.tool_resource || !args.parameters) {
         console.error('Missing required parameters');
@@ -169,8 +188,8 @@ program
         console.error('Format example: \'{"tool_resource": "@tool://calculator", "parameters": {"operation": "add", "a": 25, "b": 37}}\'');
         process.exit(1);
       }
-      
-      await cli.execute('toolx', args);
+
+      await cli.execute('toolx', [args]);
     } catch (error) {
       console.error(`ToolX command execution failed: ${error.message}`);
       process.exit(1);
@@ -190,8 +209,8 @@ program
     try {
       logger.info(chalk.cyan(`Starting MCP Server via Perseng CLI...`))
       
-      // Use MCPServerManager for unified server management
-      await MCPServerManager.launch({
+      // Use PersengServerManager for unified server management (formerly MCPServerManager)
+      await PersengServerManager.launch({
         transport: options.transport as 'stdio' | 'http',
         port: parseInt(options.port),
         host: options.host,

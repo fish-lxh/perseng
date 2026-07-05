@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { CheckCircle2, XCircle, Loader2, Plus, Pencil, Trash2, Check } from "lucide-react"
+import { CheckCircle2, XCircle, Loader2, Plus, Pencil, Trash2, Check } from "@/lib/crisp-icons"
 import { toast } from "sonner"
 
 interface AgentXProfile {

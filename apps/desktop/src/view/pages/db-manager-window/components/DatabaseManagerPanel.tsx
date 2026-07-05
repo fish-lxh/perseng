@@ -25,7 +25,7 @@ import {
   Clock,
   Layers,
   Terminal,
-} from "lucide-react"
+} from "@/lib/crisp-icons"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"

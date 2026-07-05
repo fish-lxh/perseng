@@ -1,5 +1,5 @@
 import * as React from "react";
-import { GripVertical } from "lucide-react";
+import { GripVertical } from "@/lib/crisp-icons";
 import { cn } from "@/components/agentx-ui/utils";
 import { WorkspacePanelHeader } from "./WorkspacePanelHeader";
 import type { WorkspacePanelProps } from "./types";

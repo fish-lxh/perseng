@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react"
 import { useTranslation } from "react-i18next"
-import { ArrowRight, Trash2 } from "lucide-react"
+import { ArrowRight, Trash2 } from "@/lib/crisp-icons"
 
 type Connection = { target: string; weight: number }
 type CueDetail = {

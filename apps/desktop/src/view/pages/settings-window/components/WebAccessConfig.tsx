@@ -5,7 +5,7 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Loader2, Copy, ExternalLink } from "lucide-react"
+import { Loader2, Copy, ExternalLink } from "@/lib/crisp-icons"
 import { toast } from "sonner"
 
 interface WebAccessStatus {
