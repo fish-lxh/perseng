@@ -17,17 +17,14 @@ export {
   ErrorHelper
 } from './MCPError.js';
 
-// 错误恢复策略
-export {
-  ExponentialBackoffStrategy,
-  CircuitBreakerStrategy,
-  CompositeStrategy,
-  NoOpStrategy
-} from './ErrorRecoveryStrategies.js';
-
 // 错误收集器
 export {
   ErrorCollector,
   ErrorStats,
   globalErrorCollector
 } from './ErrorCollector.js';
+
+// KNUTH-FIX 2026-07-06: 错误恢复策略（ExponentialBackoff/CircuitBreaker/Composite/NoOp）
+// 之前从 './ErrorRecoveryStrategies.js' re-export，但该模块文件已不存在（src/errors/ 下
+// 只有 ErrorCollector.ts / MCPError.ts / index.ts）。全包零引用，安全删除。
+// 如未来要重新引入，先建 src/errors/ErrorRecoveryStrategies.ts 实现类。

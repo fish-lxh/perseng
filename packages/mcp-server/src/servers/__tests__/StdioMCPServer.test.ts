@@ -394,7 +394,8 @@ describe('StdioMCPServer', () => {
       const tool: ToolWithHandler = {
         name: 'slow-tool',
         description: 'Slow tool',
-        inputSchema: {},
+        // KNUTH-FIX 2026-07-06: inputSchema 缺 type:"object" 必填字段
+        inputSchema: { type: "object" },
         handler: vi.fn(async () => {
           await new Promise(resolve => setTimeout(resolve, 50));
           return { content: [{ type: 'text', text: 'Done' }] };

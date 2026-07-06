@@ -54,7 +54,10 @@ export class MCPError extends Error {
   public readonly timestamp: number;
   /** 原始错误 */
   public readonly cause?: Error;
-  
+  /** KNUTH-FIX 2026-07-06: 加 recoverable 字段（基线 typecheck 缺此字段，
+   *  ProtocolError/ConfigurationError 构造时传 {recoverable:false} 也都报 unknown field） */
+  public readonly recoverable: boolean;
+
   constructor(
     message: string,
     code: string,
@@ -63,6 +66,7 @@ export class MCPError extends Error {
     options?: {
       cause?: Error;
       context?: any;
+      recoverable?: boolean;
     }
   ) {
     super(message);
@@ -72,9 +76,10 @@ export class MCPError extends Error {
     this.category = category;
     this.cause = options?.cause;
     this.context = options?.context;
+    this.recoverable = options?.recoverable ?? true;
     this.timestamp = Date.now();
-    
-    
+
+
     // 保持原始堆栈信息
     if (options?.cause && options.cause.stack) {
       this.stack = `${this.stack}\nCaused by: ${options.cause.stack}`;

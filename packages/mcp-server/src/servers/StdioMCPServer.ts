@@ -82,7 +82,9 @@ export class StdioMCPServer extends BaseMCPServer {
         throw new Error(`Unsupported resource protocol: ${uri.protocol}`);
       }
     } catch (error: any) {
-      this.logger.error(`Failed to read resource: ${resource.uri}`, error);
+      // KNUTH-FIX 2026-07-06: pino.Logger 不接受 (string, obj) overload
+      // 用 merging object + 单独 msg 形式（pino 标准用法）
+      this.logger.error({ err: error, uri: resource.uri }, `Failed to read resource: ${resource.uri}`);
       throw new Error(`Failed to read resource: ${error.message}`);
     }
   }

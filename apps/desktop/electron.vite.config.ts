@@ -8,7 +8,11 @@ import { execSync } from 'child_process'
 // 复制i18n文件的插件
 const copyI18nPlugin = () => ({
   name: 'copy-i18n',
-  generateBundle() {
+  // KNUTH-FIX 2026-07-06: 改用 closeBundle 钩子
+  // 原 generateBundle 在 main build 用 externalizeDepsPlugin 时不触发
+  // （rollup 不打 bundle 就不会调 generateBundle），导致 out/main/i18n/ 偶尔
+  // 没复制，electron-builder 报 ENOENT。closeBundle 在构建流程结束时必触发。
+  closeBundle() {
     // 确保输出目录存在
     const outputDir = resolve(__dirname, 'out/main/i18n')
     if (!existsSync(outputDir)) {
@@ -33,7 +37,8 @@ const copyI18nPlugin = () => ({
 // 复制 web-ui 静态文件的插件（含 agentxjs browser bundle）
 const copyWebUiPlugin = () => ({
   name: 'copy-web-ui',
-  generateBundle() {
+  // KNUTH-FIX 2026-07-06: 同步改用 closeBundle（见 copyI18nPlugin 注释）
+  closeBundle() {
     const outputDir = resolve(__dirname, 'out/main/web-ui')
     if (!existsSync(outputDir)) {
       mkdirSync(outputDir, { recursive: true })

@@ -8,7 +8,7 @@ import {
   GetPromptRequestSchema,
   ReadResourceRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
-import logger, { type Logger } from '@promptx/logger';
+import logger, { type Logger, error as logError, debug as logDebug } from '@promptx/logger';
 import type {
   MCPServer,
   MCPServerOptions,
@@ -221,7 +221,9 @@ export abstract class BaseMCPServer implements MCPServer {
     } catch (error) {
       this.setState('ERROR');
       this.lastError = error as Error;
-      this.logger.error('Failed to start server', error);
+      // KNUTH-FIX 2026-07-06: pino.Logger 不接受 (string, obj) overload，
+      // 用 logger 包的 named error() 包装函数（支持 msg+context 顺序）
+      logError('Failed to start server', error);
       throw error;
     }
   }
@@ -249,7 +251,8 @@ export abstract class BaseMCPServer implements MCPServer {
     } catch (error) {
       this.setState('ERROR');
       this.lastError = error as Error;
-      this.logger.error('Error stopping server', error);
+      // KNUTH-FIX 2026-07-06: pino overload (string, obj) 不匹配
+      logError('Error stopping server', error);
       throw error;
     }
   }
@@ -344,19 +347,22 @@ export abstract class BaseMCPServer implements MCPServer {
     const startTime = Date.now();
     
     this.logger.info(`[TOOL_EXEC_START] Tool: ${name}`);
-    this.logger.debug(`[TOOL_ARGS] ${name}:`, args);
+    // KNUTH-FIX 2026-07-06: pino.Logger 不支持 (string, obj) overload
+    logDebug(`[TOOL_ARGS] ${name}:`, args);
     
     try {
       const result = await tool.handler(args);
       
       const responseTime = Date.now() - startTime;
       this.logger.info(`[TOOL_EXEC_SUCCESS] Tool: ${name}, Time: ${responseTime}ms`);
-      this.logger.debug(`[TOOL_RESULT] ${name}:`, result);
+      // KNUTH-FIX 2026-07-06: pino overload (string, obj) 不匹配
+      logDebug(`[TOOL_RESULT] ${name}:`, result);
       
       return result;
     } catch (error: any) {
       // 直接失败，不重试，不计数，简单明了
-      this.logger.error(`[TOOL_EXEC_ERROR] Tool: ${name}`, error);
+      // KNUTH-FIX 2026-07-06: pino overload (string, obj) 不匹配
+      logError(`[TOOL_EXEC_ERROR] Tool: ${name}`, error);
       throw error;
     }
   }

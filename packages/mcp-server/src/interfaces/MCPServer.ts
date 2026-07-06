@@ -309,7 +309,7 @@ export interface MCPTransport {
 /**
  * 服务器工厂接口
  */
-export interface MCPServerFactory {
+export interface IMCPServerFactory {
   /**
    * 创建服务器实例
    */

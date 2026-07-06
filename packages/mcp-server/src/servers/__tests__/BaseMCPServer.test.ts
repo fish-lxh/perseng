@@ -11,8 +11,8 @@ class TestMCPServer extends BaseMCPServer {
   
   constructor(options: MCPServerOptions) {
     super(options);
-    // 测试环境禁用错误恢复策略，避免重试
-    this.errorRecoveryStrategy = undefined;
+    // KNUTH-FIX 2026-07-06: 删 errorRecoveryStrategy 赋值（BaseMCPServer 已删除该字段，
+    // 错误恢复流程被有意移除 —— "错误就是错误，不要自动恢复"）
   }
   
   protected async connectTransport(): Promise<void> {
@@ -330,10 +330,11 @@ describe('BaseMCPServer', () => {
     it('should include resource counts', async () => {
       await server.start();
       
+      // KNUTH-FIX 2026-07-06: 加 as const 让 type 推断为字面量 "object" 而不是 string
       const tool = {
         name: 'test',
         description: 'test',
-        inputSchema: {},
+        inputSchema: { type: "object" as const },
         handler: vi.fn()
       };
       server.registerTool(tool);
@@ -390,7 +391,7 @@ describe('BaseMCPServer', () => {
       const tool: ToolWithHandler = {
         name: 'slow-tool',
         description: 'Slow tool',
-        inputSchema: {},
+        inputSchema: { type: "object" },
         handler: vi.fn(async () => {
           await new Promise(resolve => setTimeout(resolve, 100));
           return { content: [{ type: 'text', text: 'Done' }] };
@@ -418,7 +419,7 @@ describe('BaseMCPServer', () => {
       const tool: ToolWithHandler = {
         name: 'very-slow-tool',
         description: 'Very slow tool',
-        inputSchema: {},
+        inputSchema: { type: "object" },
         handler: vi.fn(async () => {
           await new Promise(resolve => setTimeout(resolve, 10000));
           return { content: [{ type: 'text', text: 'Done' }] };
@@ -443,10 +444,11 @@ describe('BaseMCPServer', () => {
     });
     
     it('should handle concurrent tool registrations', () => {
+      // KNUTH-FIX 2026-07-06: as const 让 type 推断为字面量 "object"
       const tools = Array.from({ length: 10 }, (_, i) => ({
         name: `tool-${i}`,
         description: `Tool ${i}`,
-        inputSchema: {},
+        inputSchema: { type: "object" as const },
         handler: vi.fn()
       }));
       
@@ -461,7 +463,7 @@ describe('BaseMCPServer', () => {
       const tool: ToolWithHandler = {
         name: 'concurrent-tool',
         description: 'Concurrent tool',
-        inputSchema: {},
+        inputSchema: { type: "object" },
         handler: vi.fn(async (args: any) => ({
           content: [{ type: 'text', text: `Result: ${args.id}` }]
         }))
@@ -487,7 +489,7 @@ describe('BaseMCPServer', () => {
       const tool: ToolWithHandler = {
         name: 'tracking-tool',
         description: 'Tracking tool',
-        inputSchema: {},
+        inputSchema: { type: "object" },
         handler: vi.fn(async () => {
           // Check active requests during execution
           expect(server.getActiveRequests()).toBeGreaterThan(0);

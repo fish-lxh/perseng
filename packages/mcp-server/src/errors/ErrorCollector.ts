@@ -1,5 +1,7 @@
 import { MCPError, ErrorSeverity, ErrorCategory } from '~/errors/MCPError.js';
-import logger from '@promptx/logger';
+// KNUTH-FIX 2026-07-06: pino.Logger 不接受 (string, obj) overload
+// 全部改用 named 包装函数（支持 msg + merging-object 顺序）
+import logger, { error as logError, warn as logWarn, debug as logDebug } from '@promptx/logger';
 
 /**
  * 错误统计信息
@@ -100,8 +102,11 @@ export class ErrorCollector {
         category: e.category
       })),
       errorRate: this.calculateErrorRate(recentErrors),
+      // KNUTH-FIX 2026-07-06: ErrorStats 接口已声明 recoveryRate 但构造时漏写，补上
+      // 当前 recover 流程未实现（BaseMCPServer 已删除 recover 方法），暂时按 0 计入
+      recoveryRate: this.calculateRecoveryRate(recentErrors),
     };
-    
+
     return stats;
   }
   
@@ -167,16 +172,18 @@ export class ErrorCollector {
       recoverable: error.recoverable,
       context: error.context
     };
-    
+
+    // KNUTH-FIX 2026-07-06: pino.Logger 不接受 (string, obj) overload
+    // 改用 named 包装函数（logWarn / logError 支持 msg + merging-object 顺序）
     switch (error.severity) {
       case ErrorSeverity.WARNING:
-        logger.warn(logMessage, context);
+        logWarn(context, logMessage);
         break;
       case ErrorSeverity.FATAL:
-        logger.error(`[FATAL] ${logMessage}`, context);
+        logError(context, `[FATAL] ${logMessage}`);
         break;
       default:
-        logger.error(logMessage, context);
+        logError(context, logMessage);
     }
   }
   
@@ -270,15 +277,25 @@ export class ErrorCollector {
   
   private calculateErrorRate(errors: MCPError[]): number {
     if (errors.length === 0) return 0;
-    
+
     // 计算每分钟错误率
     const timeSpan = Math.min(
       Date.now() - errors[0].timestamp,
       this.windowSize
     );
-    
+
     const minutes = timeSpan / 60000;
     return errors.length / Math.max(minutes, 1);
+  }
+
+  /**
+   * KNUTH-FIX 2026-07-06: 计算恢复成功率
+   * 暂时按 0 计入（recover 流程已废弃，见 BaseMCPServer line 280 注释）
+   * 保留方法签名是为了不破坏 ErrorStats 接口契约
+   */
+  private calculateRecoveryRate(errors: MCPError[]): number {
+    if (errors.length === 0) return 0;
+    return 0;
   }
 }
 

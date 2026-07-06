@@ -78,9 +78,14 @@ export interface MinimalSystemEvent {
 /**
  * 把 SystemEvent.type 归一化为角色。
  * 写入时计算一次，查询走索引，便宜。
+ *
+ * KNUTH-FIX 2026-07-06: 加 'assistant_message' → 'assistant' 分支。
+ * 之前不在白名单里所以不会被采到，但补齐白名单后必须落对角色，
+ * 否则会在 Timeline 列表里被标成 system 角色。详见任务 #146。
  */
 function inferRole(type: string): EventRole {
   if (type === 'user_message') return 'user'
+  if (type === 'assistant_message') return 'assistant'
   if (type === 'tool_use_content_block_start') return 'tool_call'
   if (type === 'tool_result') return 'tool_result'
   if (type === 'message_stop' || type.startsWith('text_')) return 'assistant'

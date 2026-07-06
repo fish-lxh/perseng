@@ -1,4 +1,4 @@
-import type { MCPServer, MCPServerOptions, MCPServerFactory as IMCPServerFactory } from '~/interfaces/MCPServer.js';
+import type { MCPServer, MCPServerOptions, IMCPServerFactory } from '~/interfaces/MCPServer.js';
 import { StdioMCPServer } from '~/servers/StdioMCPServer.js';
 import { StreamableHttpMCPServer } from '~/servers/StreamableHttpMCPServer.js';
 

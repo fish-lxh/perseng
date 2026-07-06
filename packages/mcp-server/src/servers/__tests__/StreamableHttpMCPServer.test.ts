@@ -19,22 +19,28 @@ const mockApp: Partial<Express> = {
   use: vi.fn(),
   get: vi.fn(),
   post: vi.fn(),
-  listen: vi.fn((port: number, callback?: Function) => {
+  // KNUTH-FIX 2026-07-06: listen 返回 HttpServer 实例，签名要匹配 http.Server
+  listen: vi.fn((_port: number, _host?: any, callback?: any) => {
     if (callback) callback();
-    return mockHttpServer;
-  })
+    return mockHttpServer as unknown as HttpServer;
+  }) as any
 };
 
 const mockHttpServer: Partial<HttpServer> = {
-  close: vi.fn((callback?: Function) => {
+  // KNUTH-FIX 2026-07-06: close 签名是 (callback?: (err?: Error) => void) => Server
+  close: vi.fn((callback?: (err?: Error) => void) => {
     if (callback) callback();
-  }),
+    return mockHttpServer as unknown as HttpServer;
+  }) as any,
   listening: true,
-  address: vi.fn(() => ({ port: 3000 }))
+  // KNUTH-FIX 2026-07-06: address() 返回 string | AddressInfo，AddressInfo 需要 address + family + port
+  address: vi.fn(() => ({ port: 3000, address: '127.0.0.1', family: 'IPv4' }))
 };
 
 vi.mock('express', () => {
-  const express = vi.fn(() => mockApp);
+  const express = vi.fn(() => mockApp) as any;
+  // KNUTH-FIX 2026-07-06: express.json/urlencoded 是顶层函数（不是 mockApp 上的），
+  // mock 类型要单独挂到 default export 上
   express.json = vi.fn(() => (req: any, res: any, next: any) => next());
   express.urlencoded = vi.fn(() => (req: any, res: any, next: any) => next());
   return {
@@ -55,11 +61,15 @@ vi.mock('@modelcontextprotocol/sdk/server/index.js', () => {
 
 describe('StreamableHttpMCPServer', () => {
   let server: StreamableHttpMCPServer;
-  const options: MCPServerOptions = {
+  // KNUTH-FIX 2026-07-06: port 是构造参数（StreamableHttpMCPServerOptions 扩展字段），
+  // 不在 MCPServerOptions 里。test start 调用不能传 port。
+  const options: MCPServerOptions & { port: number; host: string } = {
     name: 'test-http-server',
-    version: '1.0.0'
+    version: '1.0.0',
+    port: 8080,
+    host: '127.0.0.1'
   };
-  
+
   beforeEach(() => {
     vi.clearAllMocks();
     server = new StreamableHttpMCPServer(options);
@@ -73,10 +83,11 @@ describe('StreamableHttpMCPServer', () => {
   
   describe('HTTP Server Setup', () => {
     it('should start HTTP server on specified port', async () => {
-      await server.start({ ...options, port: 3000 });
-      
+      // KNUTH-FIX 2026-07-06: port 在构造时传入，start() 不再接 port
+      await server.start({ name: options.name, version: options.version });
+
       expect(server.isRunning()).toBe(true);
-      expect(mockApp.listen).toHaveBeenCalledWith(3000, expect.any(Function));
+      expect(mockApp.listen).toHaveBeenCalledWith(8080, expect.any(Function));
     });
     
     it('should use default port if not specified', async () => {

@@ -18,9 +18,17 @@ import { createLogger } from '@promptx/logger'
 
 const logger = createLogger()
 
-/** 默认白名单：跳过 text_delta（每 token 一次，太密） */
+/**
+ * 默认白名单：跳过 text_delta（每 token 一次，太密）
+ *
+ * KNUTH-FIX 2026-07-06: 补上 'assistant_message'。
+ * 之前白名单只收 message_stop（payload 只有 { stopReason: "end_turn" }），
+ * 用户在 Timeline 详情面板看不到 assistant 实际回复的文本。
+ * 详见任务 #146 诊断。
+ */
 const DEFAULT_FILTER = new Set<string>([
   'user_message',
+  'assistant_message',
   'message_stop',
   'tool_use_content_block_start',
   'tool_result',

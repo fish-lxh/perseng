@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as fsSync from 'node:fs';
 import * as path from 'node:path';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -19,7 +20,15 @@ import { BaseMCPServer } from '~/servers/BaseMCPServer.js';
 import type { MCPServerOptions } from '~/interfaces/MCPServer.js';
 import { WorkerpoolAdapter } from '~/workers/index.js';
 import type { ToolWorkerPool } from '~/interfaces/ToolWorkerPool.js';
-import packageJson from '../../package.json' assert { type: 'json' };
+import { fileURLToPath } from 'node:url';
+
+// KNUTH-FIX 2026-07-06: tsconfig module=ES2020 不支持 `assert { type: 'json' }`（仅
+// esnext/nodenext 支持）。改用 readFileSync + JSON.parse 读 package.json
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const packageJson = JSON.parse(
+  fsSync.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8')
+) as { version: string; name: string };
 
 interface ParsedMcpUrl {
   host: string;

@@ -91,9 +91,11 @@ describe('MCPServer Interface Contract Tests', () => {
       // server.simulateError(error);
       
       if (server.getState() === 'ERROR') {
-        // 验证错误恢复
-        await server.recover();
-        expect(['RUNNING', 'STOPPED']).toContain(server.getState());
+        // KNUTH-FIX 2026-07-06: BaseMCPServer 已删除 recover()（line 280 注释：
+        // "错误就是错误，不要自动恢复"）。改用 stop + 重新 start 模拟恢复路径。
+        await server.stop();
+        await server.start();
+        expect(server.getState()).toBe('RUNNING');
       }
     });
 
@@ -295,10 +297,9 @@ describe('MCPServer Interface Contract Tests', () => {
       // await server.simulateFatalError();
       
       if (server.getState() === 'FATAL_ERROR') {
-        // 只能关闭，不能恢复
-        await expect(server.recover()).rejects.toThrow(/Cannot recover from fatal error/);
-        
-        // 但可以优雅关闭
+        // KNUTH-FIX 2026-07-06: recover() 已删除。FATAL_ERROR 状态下应拒绝重启
+        // 任何操作，只能 gracefulShutdown 关闭。
+        await expect(server.start()).rejects.toThrow();
         await server.gracefulShutdown(5000);
         expect(server.getState()).toBe('STOPPED');
       }

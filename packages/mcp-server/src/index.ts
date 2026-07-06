@@ -16,7 +16,6 @@
 export type {
   MCPServer,
   MCPServerOptions,
-  MCPServerFactory,
   MCPTransport,
   ServerState,
   ToolHandler,
@@ -25,6 +24,9 @@ export type {
   ServerMetrics,
   SessionContext
 } from '~/interfaces/MCPServer.js';
+// KNUTH-FIX 2026-07-06: 原 export type { MCPServerFactory } 与下方 value export
+// { MCPServerFactory } 重复，改成 IMCPServerFactory（interface 已重命名）避开冲突
+export type { IMCPServerFactory as MCPServerFactoryInterface } from '~/interfaces/MCPServer.js';
 
 // 导出服务器实现
 export { BaseMCPServer } from '~/servers/BaseMCPServer.js';

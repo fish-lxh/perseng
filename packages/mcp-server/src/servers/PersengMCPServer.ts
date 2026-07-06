@@ -9,7 +9,7 @@ import { StdioMCPServer } from './StdioMCPServer.js';
 import { StreamableHttpMCPServer } from './StreamableHttpMCPServer.js';
 import { createAllTools } from '../tools/index.js';
 import type { MCPServer } from '../interfaces/MCPServer.js';
-import logger from '@promptx/logger';
+import logger, { error as logError } from '@promptx/logger';
 
 export interface PersengServerOptions {
   // 基础选项
@@ -142,7 +142,8 @@ export class PersengMCPServer {
         logger.info('Server stopped cleanly');
         process.exit(0);
       } catch (error) {
-        logger.error('Error during shutdown:', error);
+        // KNUTH-FIX 2026-07-06: pino overload (string, obj) 不匹配，用 named error() 包装
+        logError('Error during shutdown:', error);
         process.exit(1);
       }
     };

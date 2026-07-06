@@ -98,13 +98,13 @@ npmRebuild: true
 # (proxyconnect tcp: dial tcp :0)。改用 electronDist 直接指向本地已缓存的
 # electron zip，跳过下载阶段。
 #
-# 路径通过环境变量解析，不写死用户名：
-#   ELECTRON_DIST=C:\Users\<you>\AppData\Local\electron\Cache\v39.8.10\electron-v39.8.10-win32-x64.zip
-# 或 (Linux/macOS):
-#   ELECTRON_DIST=/Users/<you>/Library/Caches/electron/v39.8.10/electron-v39.8.10-darwin-x64.zip
-#
+# KNUTH-FIX 2026-07-06: 上一版用 ${env.ELECTRON_DIST} 占位符，electron-builder 26
+# 不解析这种 yml 字面量 —— 设了 env 还是字面量路径，build 报
+# "The specified electronDist does not exist: ${env.ELECTRON_DIST}"。
+# 实际 Cache/electron/v39.8.10/electron-v39.8.10-win32-x64.zip 已存在，
+# builder 默认会找这个路径。删掉 electronDist 字段即可走默认 cache。
 # 详见 docs/desktop-binary-build.md（4 件套绕过 GitHub 下载）。
-electronDist: ${env.ELECTRON_DIST}
+# electronDist: <disabled — 用默认 cache>
 
 # 生成更新元数据文件
 generateUpdatesFilesForAllChannels: true
