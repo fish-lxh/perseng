@@ -94,10 +94,17 @@ dmg:
 
 npmRebuild: true
 
-# Electron download mirror
-# Use official GitHub source (fallback if China mirror fails)
-electronDownload:
-  mirror: https://github.com/electron/electron/releases/download/
+# KNUTH-FIX 2026-07-05: 当前网络环境下 app-builder.exe 走代理下载必失败
+# (proxyconnect tcp: dial tcp :0)。改用 electronDist 直接指向本地已缓存的
+# electron zip，跳过下载阶段。
+#
+# 路径通过环境变量解析，不写死用户名：
+#   ELECTRON_DIST=C:\Users\<you>\AppData\Local\electron\Cache\v39.8.10\electron-v39.8.10-win32-x64.zip
+# 或 (Linux/macOS):
+#   ELECTRON_DIST=/Users/<you>/Library/Caches/electron/v39.8.10/electron-v39.8.10-darwin-x64.zip
+#
+# 详见 docs/desktop-binary-build.md（4 件套绕过 GitHub 下载）。
+electronDist: ${env.ELECTRON_DIST}
 
 # 生成更新元数据文件
 generateUpdatesFilesForAllChannels: true

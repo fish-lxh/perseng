@@ -66,6 +66,12 @@ Thumbs.db
 .node_repl_history
 .turbo
 
+# electron-builder 本地缓存（不应入仓；用 ELECTRON_BUILDER_NSIS_RESOURCES_DIR
+# 环境变量指向本机正确位置，详见 docs/desktop-binary-build.md）
+apps/desktop/nsis-resources-*/
+apps/desktop/winCodeSign-*/
+apps/desktop/release/
+
 # Output of package managers
 *.tgz
 .yarn-integrity
