@@ -20,6 +20,7 @@ import { BaseEventHandler } from "./BaseEventHandler";
 import { ContextManager } from "../environment/ContextManager";
 import { SummarizationHelper } from "./commands/SummarizationHelper";
 import { ImageCommands } from "./commands/ImageCommands";
+import { AgentCommands } from "./commands/AgentCommands";
 import { createLogger } from "@agentxjs/common";
 
 const logger = createLogger("runtime/CommandHandler");
@@ -156,6 +157,11 @@ export class CommandHandler extends BaseEventHandler {
    * event channel via bindHandlers/register).
    */
   readonly imageCommands: ImageCommands;
+  /**
+   * P0 step 1.3: agent_*_request / message_send_request handler 群.
+   * 详见 commands/AgentCommands.ts.
+   */
+  readonly agentCommands: AgentCommands;
 
   constructor(
     bus: SystemBus,
@@ -169,6 +175,7 @@ export class CommandHandler extends BaseEventHandler {
       contextManager ?? null,
     );
     this.imageCommands = new ImageCommands(bus, operations, this.summarizationHelper);
+    this.agentCommands = new AgentCommands(bus, operations);
 
     this.bindHandlers();
     logger.debug("CommandHandler created");
@@ -211,23 +218,10 @@ export class CommandHandler extends BaseEventHandler {
       this.bus.onCommand("container_list_request", (event) => this.handleContainerList(event))
     );
 
-    // Agent commands
-    this.subscribe(this.bus.onCommand("agent_get_request", (event) => this.handleAgentGet(event)));
-    this.subscribe(
-      this.bus.onCommand("agent_list_request", (event) => this.handleAgentList(event))
-    );
-    this.subscribe(
-      this.bus.onCommand("agent_destroy_request", (event) => this.handleAgentDestroy(event))
-    );
-    this.subscribe(
-      this.bus.onCommand("agent_destroy_all_request", (event) => this.handleAgentDestroyAll(event))
-    );
-    this.subscribe(
-      this.bus.onCommand("message_send_request", (event) => this.handleMessageSend(event))
-    );
-    this.subscribe(
-      this.bus.onCommand("agent_interrupt_request", (event) => this.handleAgentInterrupt(event))
-    );
+    // Agent commands (P0 step 1.3: extracted to AgentCommands)
+    for (const unsubscribe of this.agentCommands.register()) {
+      this.subscribe(unsubscribe);
+    }
 
     // Image commands (P0 step 1.2: extracted to ImageCommands)
     for (const unsubscribe of this.imageCommands.register()) {
@@ -293,155 +287,7 @@ export class CommandHandler extends BaseEventHandler {
   }
 
   // ==================== Agent Handlers ====================
-
-  private handleAgentGet(event: { data: { requestId: string; agentId: string } }): void {
-    const { requestId, agentId } = event.data;
-    logger.debug("Handling agent_get_request", { requestId, agentId });
-
-    const agent = this.ops.getAgent(agentId);
-    this.bus.emit(
-      createResponse("agent_get_response", {
-        requestId,
-        agentId: agent?.agentId,
-        containerId: agent?.containerId,
-        exists: !!agent,
-      })
-    );
-  }
-
-  private handleAgentList(event: { data: { requestId: string; containerId: string } }): void {
-    const { requestId, containerId } = event.data;
-    logger.debug("Handling agent_list_request", { requestId, containerId });
-
-    const agents = this.ops.listAgents(containerId);
-    this.bus.emit(
-      createResponse("agent_list_response", {
-        requestId,
-        agents: agents.map((a) => ({
-          agentId: a.agentId,
-          containerId: a.containerId,
-          imageId: a.imageId,
-        })),
-      })
-    );
-  }
-
-  private async handleAgentDestroy(event: {
-    data: { requestId: string; agentId: string };
-  }): Promise<void> {
-    const { requestId, agentId } = event.data;
-    logger.debug("Handling agent_destroy_request", { requestId, agentId });
-
-    try {
-      const success = await this.ops.destroyAgent(agentId);
-      this.bus.emit(
-        createResponse("agent_destroy_response", {
-          requestId,
-          agentId,
-          success,
-        })
-      );
-    } catch (err) {
-      this.emitError("Failed to destroy agent", err, requestId, { agentId });
-      this.bus.emit(
-        createResponse("agent_destroy_response", {
-          requestId,
-          agentId,
-          success: false,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      );
-    }
-  }
-
-  private async handleAgentDestroyAll(event: {
-    data: { requestId: string; containerId: string };
-  }): Promise<void> {
-    const { requestId, containerId } = event.data;
-    logger.debug("Handling agent_destroy_all_request", { requestId, containerId });
-
-    try {
-      await this.ops.destroyAllAgents(containerId);
-      this.bus.emit(
-        createResponse("agent_destroy_all_response", {
-          requestId,
-          containerId,
-        })
-      );
-    } catch (err) {
-      this.emitError("Failed to destroy all agents", err, requestId, { containerId });
-      this.bus.emit(
-        createResponse("agent_destroy_all_response", {
-          requestId,
-          containerId,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      );
-    }
-  }
-
-  private async handleMessageSend(event: {
-    data: {
-      requestId: string;
-      imageId?: string;
-      agentId?: string;
-      content: string | UserContentPart[];
-    };
-  }): Promise<void> {
-    const { requestId, imageId, agentId, content } = event.data;
-    logger.debug("Handling message_send_request", { requestId, imageId, agentId });
-
-    try {
-      // Pass requestId for event correlation
-      const result = await this.ops.receiveMessage(imageId, agentId, content, requestId);
-      this.bus.emit(
-        createResponse("message_send_response", {
-          requestId,
-          imageId: result.imageId,
-          agentId: result.agentId,
-        })
-      );
-    } catch (err) {
-      this.emitError("Failed to send message", err, requestId, { imageId, agentId });
-      this.bus.emit(
-        createResponse("message_send_response", {
-          requestId,
-          imageId,
-          agentId: agentId ?? "",
-          error: err instanceof Error ? err.message : String(err),
-        })
-      );
-    }
-  }
-
-  private handleAgentInterrupt(event: {
-    data: { requestId: string; imageId?: string; agentId?: string };
-  }): void {
-    const { requestId, imageId, agentId } = event.data;
-    logger.debug("Handling agent_interrupt_request", { requestId, imageId, agentId });
-
-    try {
-      // Pass requestId for event correlation
-      const result = this.ops.interruptAgent(imageId, agentId, requestId);
-      this.bus.emit(
-        createResponse("agent_interrupt_response", {
-          requestId,
-          imageId: result.imageId,
-          agentId: result.agentId,
-        })
-      );
-    } catch (err) {
-      this.emitError("Failed to interrupt agent", err, requestId, { imageId, agentId });
-      this.bus.emit(
-        createResponse("agent_interrupt_response", {
-          requestId,
-          imageId,
-          agentId,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      );
-    }
-  }
+  // P0 step 1.3: moved to commands/AgentCommands.ts
 
   // ==================== Image Handlers ====================
   // P0 step 1.2: moved to commands/ImageCommands.ts
