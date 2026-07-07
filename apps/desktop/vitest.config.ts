@@ -24,6 +24,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '~': resolve(__dirname, './src'),
+      '@': resolve(__dirname, './src/view'),
       '@promptx/core': resolve(__dirname, '../../src'),
       '@domain': resolve(__dirname, './src/domain'),
       '@application': resolve(__dirname, './src/application'),

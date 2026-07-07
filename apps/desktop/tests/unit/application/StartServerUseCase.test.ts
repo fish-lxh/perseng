@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { StartServerUseCase } from '../../../src/application/useCases/StartServerUseCase.js'
-import { ServerConfig } from '../../../src/domain/entities/ServerConfig.js'
-import { ServerError, ServerErrorCode } from '../../../src/domain/errors/ServerErrors.js'
-import { ServerStatus } from '../../../src/domain/valueObjects/ServerStatus.js'
+import { StartServerUseCase } from '../../../src/main/application/useCases/StartServerUseCase.js'
+import { ServerConfig } from '../../../src/main/domain/entities/ServerConfig.js'
+import { ServerError, ServerErrorCode } from '../../../src/main/domain/errors/ServerErrors.js'
+import { ServerStatus } from '../../../src/main/domain/valueObjects/ServerStatus.js'
 import { ResultUtil } from '../../../src/shared/Result.js'
-import type { IServerPort } from '../../../src/domain/ports/IServerPort.js'
-import type { IConfigPort } from '../../../src/domain/ports/IConfigPort.js'
-import type { INotificationPort } from '../../../src/domain/ports/INotificationPort.js'
+import type { IServerPort } from '../../../src/main/domain/ports/IServerPort.js'
+import type { IConfigPort } from '../../../src/main/domain/ports/IConfigPort.js'
+import type { INotificationPort } from '../../../src/main/domain/ports/INotificationPort.js'
 
 describe('StartServerUseCase', () => {
   let useCase: StartServerUseCase
@@ -162,12 +162,12 @@ describe('StartServerUseCase', () => {
       const startCall = vi.mocked(serverPort.start).mock.calls[0]
       if (startCall) {
         const config = startCall[0] as ServerConfig
-        expect(config.port).toBe(3000)
-        expect(config.host).toBe('localhost')
+        expect(config.port).toBe(5203)
+        expect(config.host).toBe('127.0.0.1')
       }
     })
 
-    it('should save config after successful start', async () => {
+    it('should not persist config after successful start', async () => {
       const config = ServerConfig.default()
       vi.mocked(configPort.load).mockResolvedValue(ResultUtil.ok(config))
       vi.mocked(serverPort.start).mockResolvedValue(ResultUtil.ok(undefined))
@@ -177,7 +177,7 @@ describe('StartServerUseCase', () => {
       const result = await useCase.execute()
 
       expect(result.ok).toBe(true)
-      expect(configPort.save).toHaveBeenCalledWith(config)
+      expect(configPort.save).not.toHaveBeenCalled()
     })
 
     it('should provide server address in success message', async () => {
@@ -216,7 +216,7 @@ describe('StartServerUseCase', () => {
 
       expect(result.ok).toBe(true)
       expect(serverPort.start).toHaveBeenCalledWith(customConfig.value)
-      expect(configPort.save).toHaveBeenCalledWith(customConfig.value)
+      expect(configPort.save).not.toHaveBeenCalled()
     })
 
     it('should not load config when using custom config', async () => {

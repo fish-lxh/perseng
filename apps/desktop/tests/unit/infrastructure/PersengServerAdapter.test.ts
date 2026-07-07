@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { ServerConfig } from '../../../src/domain/entities/ServerConfig.js'
-import { ServerStatus } from '../../../src/domain/valueObjects/ServerStatus.js'
-import { ServerError, ServerErrorCode } from '../../../src/domain/errors/ServerErrors.js'
+import { ServerConfig } from '../../../src/main/domain/entities/ServerConfig.js'
+import { ServerStatus } from '../../../src/main/domain/valueObjects/ServerStatus.js'
+import { ServerError, ServerErrorCode } from '../../../src/main/domain/errors/ServerErrors.js'
 import { ResultUtil } from '../../../src/shared/Result.js'
 
 // Mock the entire module
-vi.mock('../../../src/infrastructure/adapters/PersengServerAdapter.js', async () => {
-  const actual = await vi.importActual('../../../src/infrastructure/adapters/PersengServerAdapter.js') as any
+vi.mock('../../../src/main/infrastructure/adapters/PersengServerAdapter.js', async () => {
+  const actual = await vi.importActual('../../../src/main/infrastructure/adapters/PersengServerAdapter.js') as any
 
   class MockPersengServerAdapter {
     private mockServer: any
@@ -115,7 +115,7 @@ vi.mock('../../../src/infrastructure/adapters/PersengServerAdapter.js', async ()
   return { PersengServerAdapter: MockPersengServerAdapter }
 })
 
-import { PersengServerAdapter } from '../../../src/infrastructure/adapters/PersengServerAdapter.js'
+import { PersengServerAdapter } from '../../../src/main/infrastructure/adapters/PersengServerAdapter.js'
 
 describe('PersengServerAdapter', () => {
   let adapter: any
@@ -235,7 +235,10 @@ describe('PersengServerAdapter', () => {
   describe('restart', () => {
     it('should restart running server', async () => {
       const config = ServerConfig.default()
-      mockServer.isRunning.mockReturnValue(true)
+      mockServer.isRunning
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false)
       mockServer.stop.mockResolvedValue(undefined)
       mockServer.start.mockResolvedValue(undefined)
 
@@ -261,6 +264,7 @@ describe('PersengServerAdapter', () => {
 
   describe('getStatus', () => {
     it('should return STOPPED when server is null', async () => {
+      adapter = new PersengServerAdapter()
       const result = await adapter.getStatus()
 
       expect(result.ok).toBe(true)

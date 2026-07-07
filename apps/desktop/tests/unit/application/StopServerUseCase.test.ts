@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { StopServerUseCase } from '../../../src/application/useCases/StopServerUseCase.js'
-import { ServerError, ServerErrorCode } from '../../../src/domain/errors/ServerErrors.js'
+import { StopServerUseCase } from '../../../src/main/application/useCases/StopServerUseCase.js'
+import { ServerError, ServerErrorCode } from '../../../src/main/domain/errors/ServerErrors.js'
 import { ResultUtil } from '../../../src/shared/Result.js'
-import type { IServerPort } from '../../../src/domain/ports/IServerPort.js'
-import type { INotificationPort } from '../../../src/domain/ports/INotificationPort.js'
+import type { IServerPort } from '../../../src/main/domain/ports/IServerPort.js'
+import type { INotificationPort } from '../../../src/main/domain/ports/INotificationPort.js'
 
 describe('StopServerUseCase', () => {
   let useCase: StopServerUseCase
