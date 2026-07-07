@@ -17,15 +17,18 @@ import { agentXService } from '~/main/services/AgentXService'
 import { webAccessService } from '~/main/services/WebAccessService'
 import { FeishuManager } from '~/main/services/feishu'
 import { workspaceService } from '~/main/services/WorkspaceService'
-import { getEventLog } from '@promptx/mcp-server/timeline'
-import { scanPersengHome, querySqlite } from '~/main/services/DatabaseManager'
 import * as logger from '@promptx/logger'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
-import { migratePromptXHomeIfNeeded, getPersengHomeDir } from '~/main/utils/persengPaths'
+import { migratePromptXHomeIfNeeded } from '~/main/utils/persengPaths'
 import { registerServerConfigIpc } from '~/main/ipc/serverConfigIpc'
 import { registerLanguageIpc } from '~/main/ipc/languageIpc'
 import { registerLogsIpc } from '~/main/ipc/logsIpc'
+import { registerTimelineIpc } from '~/main/ipc/timelineIpc'
+import { registerDatabaseManagerIpc } from '~/main/ipc/databaseManagerIpc'
+import { registerDialogIpc } from '~/main/ipc/dialogIpc'
+import { registerShellIpc } from '~/main/ipc/shellIpc'
+import { registerWindowIpc } from '~/main/ipc/windowIpc'
 
 class PersengDesktopApp {
   private trayPresenter: TrayPresenter | null = null
@@ -87,14 +90,15 @@ class PersengDesktopApp {
     registerServerConfigIpc({ getConfigPort: () => this.configPort, getServerPort: () => this.serverPort })
     registerLanguageIpc({ getTrayPresenter: () => this.trayPresenter })
     registerLogsIpc()
-    this.setupDialogIPC()
-    this.setupShellIPC()
+    registerDialogIpc()
+    registerShellIpc()
+    registerWindowIpc()
     this.setupAgentXIPC()
     this.setupWebAccessIPC()
     this.setupFeishuIPC()
     this.setupWorkspaceIPC()
-    this.setupTimelineIPC()
-    this.setupDatabaseManagerIPC()
+    registerTimelineIpc()
+    registerDatabaseManagerIpc()
 
     // Setup infrastructure
     logger.info('Setting up infrastructure...')
@@ -306,251 +310,6 @@ class PersengDesktopApp {
         }
       }
     }
-  }
-
-  /**
-   * 活动事件流时间线 IPC 桥接
-   * 旁路订阅 SystemBus → 写入 ~/.perseng/timeline/events.db
-   * 主进程直接 import @promptx/mcp-server/timeline（共享单例）
-   */
-  private setupTimelineIPC(): void {
-    // 防止重复注册
-    if ((this as any)._timelineIpcRegistered) return
-    ;(this as any)._timelineIpcRegistered = true
-
-    ipcMain.handle('timeline:query', async (_event, filter: any = {}) => {
-      try {
-        const log = getEventLog()
-        const limit = filter.limit ?? 50
-        const rows = await log.query(filter)
-        const total = await log.count({
-          sessionId: filter.sessionId,
-          agentId: filter.agentId,
-          imageId: filter.imageId,
-          types: filter.types,
-          roles: filter.roles,
-          sinceTs: filter.sinceTs,
-          untilTs: filter.untilTs,
-        })
-        const nextCursor =
-          rows.length === limit && rows.length > 0 ? rows[rows.length - 1].id : null
-        return { success: true, events: rows, total, nextCursor }
-      } catch (error) {
-        logger.error('Failed to query timeline:', String(error))
-        return { success: false, error: String(error), events: [], total: 0, nextCursor: null }
-      }
-    })
-
-    ipcMain.handle('timeline:clear', async (_event, filter: { scope?: 'all' | 'session' | 'agent' | 'image'; targetId?: string } = {}) => {
-      try {
-        const log = getEventLog()
-        const result = await log.clear(filter)
-        logger.info(`[timeline:clear] deleted ${result.deleted} events (scope=${filter.scope ?? 'all'})`)
-        return { success: true, ...result }
-      } catch (error) {
-        logger.error('Failed to clear timeline:', String(error))
-        return { success: false, error: String(error), deleted: 0 }
-      }
-    })
-
-    ipcMain.handle('timeline:statistics', async () => {
-      try {
-        const log = getEventLog()
-        return await log.getStatistics()
-      } catch (error) {
-        logger.error('Failed to get timeline statistics:', String(error))
-        return { totalEvents: 0, dbPath: '' }
-      }
-    })
-  }
-
-  /**
-   * 数据库管理 IPC 桥接
-   * 轻量版：递归扫 ~/.perseng/ 下所有 .db 和 .json 文件，
-   * 对已知 schema 的 db（timeline / engrams）做行数和时间范围统计，
-   * 其他 db / json 只列文件信息。零破坏性：所有操作只读，不修改任何 db。
-   */
-  private setupDatabaseManagerIPC(): void {
-    if ((this as any)._dbManagerIpcRegistered) return
-    ;(this as any)._dbManagerIpcRegistered = true
-
-    ipcMain.handle('dbManager:scan', async () => {
-      try {
-        const root = getPersengHomeDir()
-        const items = scanPersengHome(root)
-        const totals = {
-          totalSize: items.reduce((s, i) => s + i.size, 0),
-          dbCount: items.filter((i) => i.type === 'sqlite').length,
-          jsonCount: items.filter((i) => i.type === 'json').length,
-          rootDir: root,
-          scannedAt: Date.now(),
-        }
-        return { success: true, items, totals }
-      } catch (error) {
-        logger.error('Failed to scan perseng home:', String(error))
-        return { success: false, error: String(error), items: [], totals: null }
-      }
-    })
-
-    ipcMain.handle('dbManager:openDir', async (_event, dirPath: string) => {
-      try {
-        if (!dirPath || !fs.existsSync(dirPath)) {
-          return { success: false, error: 'Path not found' }
-        }
-        const { shell } = await import('electron')
-        await shell.openPath(dirPath)
-        return { success: true }
-      } catch (error) {
-        logger.error('Failed to open dir:', String(error))
-        return { success: false, error: String(error) }
-      }
-    })
-
-    ipcMain.handle('dbManager:openFile', async (_event, filePath: string) => {
-      try {
-        if (!filePath || !fs.existsSync(filePath)) {
-          return { success: false, error: 'File not found' }
-        }
-        const { shell: sh } = await import('electron')
-        // showItemInFolder 在文件管理器中高亮文件
-        sh.showItemInFolder(filePath)
-        return { success: true }
-      } catch (error) {
-        logger.error('Failed to open file:', String(error))
-        return { success: false, error: String(error) }
-      }
-    })
-
-    // L3 SQL 控制台：只读执行单条 SQL
-    ipcMain.handle('dbManager:query', async (_event, dbPath: string, sql: string) => {
-      try {
-        if (!dbPath || !sql?.trim()) {
-          return { success: false, error: 'dbPath or sql is empty' }
-        }
-        const result = querySqlite(dbPath, sql)
-        return { success: true, ...result }
-      } catch (error: any) {
-        logger.error('SQL query failed:', error?.message ?? String(error))
-        return { success: false, error: error?.message ?? String(error) }
-      }
-    })
-  }
-
-  private setupDialogIPC(): void {
-    // 打开文件选择对话框
-    ipcMain.handle('dialog:openFile', async (_event, options?: any) => {
-      try {
-        const result = await dialog.showOpenDialog(options || {})
-        return result
-      } catch (error) {
-        logger.error('Failed to open file dialog:', String(error))
-        return { canceled: true, filePaths: [] }
-      }
-    })
-
-    // 读取文件内容（返回 base64）
-    ipcMain.handle('dialog:readFile', async (_event, filePath: string) => {
-      try {
-        const fs = await import('fs/promises')
-        const path = await import('path')
-        const buffer = await fs.readFile(filePath)
-        const fileName = path.basename(filePath)
-        // 简单的 MIME 类型检测
-        const ext = path.extname(filePath).toLowerCase()
-        const mimeTypes: Record<string, string> = {
-          '.jpg': 'image/jpeg',
-          '.jpeg': 'image/jpeg',
-          '.png': 'image/png',
-          '.gif': 'image/gif',
-          '.webp': 'image/webp',
-          '.pdf': 'application/pdf',
-          '.doc': 'application/msword',
-          '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          '.xls': 'application/vnd.ms-excel',
-          '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          '.ppt': 'application/vnd.ms-powerpoint',
-          '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-          '.txt': 'text/plain',
-          '.json': 'application/json',
-          '.xml': 'application/xml',
-          '.zip': 'application/zip',
-        }
-        const mimeType = mimeTypes[ext] || 'application/octet-stream'
-        return {
-          success: true,
-          data: buffer.toString('base64'),
-          fileName,
-          mimeType,
-          size: buffer.length,
-        }
-      } catch (error) {
-        logger.error('Failed to read file:', String(error))
-        return { success: false, error: String(error) }
-      }
-    })
-  }
-
-  private setupShellIPC(): void {
-    // 打开外部链接 - 在新的 Electron 窗口中打开
-    ipcMain.handle('shell:openExternal', async (_event, url: string) => {
-      try {
-        const parsedUrl = new URL(url)
-        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-          throw new Error(`Unsupported URL protocol: ${parsedUrl.protocol}`)
-        }
-
-        const { BrowserWindow } = await import('electron')
-
-        // 创建新的浏览器窗口
-        const browserWindow = new BrowserWindow({
-          width: 1200,
-          height: 800,
-          webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-          },
-          title: 'Browser',
-        })
-
-        // 加载 URL
-        await browserWindow.loadURL(parsedUrl.toString())
-
-        logger.info('Opened URL in Electron browser window:', parsedUrl.toString())
-      } catch (error) {
-        logger.error('Failed to open URL in browser window:', String(error))
-        throw error
-      }
-    })
-
-    ipcMain.handle('window:minimize', (event) => {
-      const window = BrowserWindow.fromWebContents(event.sender)
-      window?.minimize()
-    })
-
-    ipcMain.handle('window:maximize-toggle', (event) => {
-      const window = BrowserWindow.fromWebContents(event.sender)
-      if (!window) {
-        return { isMaximized: false }
-      }
-
-      if (window.isMaximized()) {
-        window.unmaximize()
-      } else {
-        window.maximize()
-      }
-
-      return { isMaximized: window.isMaximized() }
-    })
-
-    ipcMain.handle('window:close', (event) => {
-      const window = BrowserWindow.fromWebContents(event.sender)
-      window?.close()
-    })
-
-    ipcMain.handle('window:is-maximized', (event) => {
-      const window = BrowserWindow.fromWebContents(event.sender)
-      return window?.isMaximized() ?? false
-    })
   }
 
   private setupAgentXIPC(): void {
