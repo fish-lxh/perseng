@@ -1230,10 +1230,11 @@ export class ResourceListWindow {
     })
 
     // 上传角色头像（仅用户角色）
-    ipcMain.handle('resources:uploadRoleAvatar', async (_evt, payload: { id: string; source?: string; imagePath: string }) => {
+    ipcMain.handle('resources:uploadRoleAvatar', async (_evt, payload: { id: string; source?: string; imagePath: string; version?: string }) => {
       try {
         const { id, imagePath } = payload || {}
         const source = payload?.source ?? 'user'
+        const version = payload?.version ?? 'v1'
         if (!id || !imagePath) return { success: false, message: 'Missing params' }
 
         const pathMod = require('path')
@@ -1242,8 +1243,15 @@ export class ResourceListWindow {
 
         if (source !== 'user') return { success: false, message: 'Only user roles support avatar upload' }
 
-        const roleDir = pathMod.join(os.homedir(), '.perseng', 'resource', 'role', id)
-        if (!(await fs.pathExists(roleDir))) return { success: false, message: 'Role directory not found' }
+        // KNUTH-FIX 2026-07-06: V1/V2 物理目录不同
+        //   V1 user: ~/.perseng/resource/role/<id>/
+        //   V2 user: ~/.rolex/roles/<id>/（与 identity/ 同级，与 getRoleAvatar 读端对齐）
+        // 之前写死 V1 路径，导致 V2 角色上传直接走 "Role directory not found" 静默失败
+        // （参考 packages/core/src/rolex/RolexBridge.js:160 isV2Role 与 DiscoverCommand.js:270 v2: 前缀）
+        const roleDir = version === 'v2'
+          ? pathMod.join(os.homedir(), '.rolex', 'roles', id)
+          : pathMod.join(os.homedir(), '.perseng', 'resource', 'role', id)
+        await fs.ensureDir(roleDir)  // V1 目录不存在时自动创建（兼容 V1 新角色）
 
         // Remove any existing profile.* files
         for (const ext of ['png', 'jpg', 'jpeg', 'webp']) {

@@ -402,7 +402,9 @@
       "use": "Use",
       "export": "Export",
       "exportSuccess": "Exported successfully",
-      "exportFailed": "Export failed"
+      "exportFailed": "Export failed",
+      "avatarUploadSuccess": "Avatar updated for {{name}}",
+      "avatarUploadFailed": "Avatar upload failed"
     },
     "messages": {
       "loadFailed": "Failed to load resources",

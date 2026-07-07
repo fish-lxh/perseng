@@ -827,12 +827,23 @@ export default function RoleDetailPanel({ selectedRole, onActivate, onDelete, on
     if (result?.canceled || !result?.filePaths[0]) return
     setAvatarUploading(true)
     try {
+      // KNUTH-FIX 2026-07-06: 传 version 字段，main handler 据此选 V1/V2 物理目录
+      // （V1: ~/.perseng/resource/role/<id>/  V2: ~/.rolex/roles/<id>/）
       const res = await window.electronAPI?.uploadRoleAvatar({
         id: selectedRole.id,
         source: selectedRole.source,
         imagePath: result.filePaths[0],
+        version: selectedRole.version,
       })
-      if (res?.success) setAvatarVersion(v => v + 1)
+      if (res?.success) {
+        setAvatarVersion(v => v + 1)
+        toast.success(t("resources.actions.avatarUploadSuccess", { name: selectedRole.id }))
+      } else {
+        // 之前只 setAvatarUploading(false) 没 else，导致 V2 上传失败时静默
+        toast.error(res?.message || t("resources.actions.avatarUploadFailed"))
+      }
+    } catch (err: any) {
+      toast.error(err?.message || t("resources.actions.avatarUploadFailed"))
     } finally {
       setAvatarUploading(false)
     }

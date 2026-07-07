@@ -405,6 +405,10 @@ export class TrayPresenter {
 
     if (process.env.ELECTRON_RENDERER_URL) {
       this.mainWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}#/main`)
+      // KNUTH-DEBUG 2026-07-06: dev 模式自动开 DevTools
+      // （无边框窗口 + 无菜单栏导致 Ctrl+Shift+I 失效，
+      //   settings 页面调试需要直接看 renderer console log）
+      this.mainWindow.webContents.openDevTools({ mode: 'detach' })
     } else {
       const indexHtmlPath = path.join(__dirname, '../renderer/index.html')
       this.mainWindow.loadFile(indexHtmlPath, { hash: '/main' })

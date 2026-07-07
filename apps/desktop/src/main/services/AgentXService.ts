@@ -2,7 +2,13 @@ import { LoggerFactoryImpl, type AgentX, type Unsubscribe } from 'agentxjs'
 import * as logger from '@promptx/logger'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
+import * as os from 'node:os'
 import { app } from 'electron'
+// KNUTH-FIX 2026-07-06: adm-zip 是 CJS 包（"main": "adm-zip.js"），在 ESM 模式下
+// import default 拿到的就是 AdmZip class。之前用 require('adm-zip') 在 "type": "module"
+// 项目里直接 ReferenceError，导致 skill zip 安装"如同虚设"（错误被 catch 吞掉，UI 弹个
+// 不显眼的 toast 用户没看到）。
+import AdmZip from 'adm-zip'
 // KNUTH-FEAT 2026-07-04: 绕开 agentxjs facade 的 shouldEnqueue 过滤，
 // 让 timeline 拿到全量 events（特别是 tool_use_content_block_start /
 // tool_result / text_* 这类 source==='environment' 的事件）。
@@ -690,22 +696,25 @@ export class AgentXService {
    * zip 内应包含一个文件夹，文件夹内有 SKILL.md 文件
    */
   async importSkill(zipPath: string): Promise<{ success: boolean; skillName?: string; error?: string }> {
-    const AdmZip = require('adm-zip')
-    const os = require('os')
-
+    // KNUTH-DIAG 2026-07-06: 详细 console.log 排查"三个信号都没出现"
+    console.log('[importSkill] enter, zipPath =', zipPath)
     try {
       if (!fs.existsSync(zipPath)) {
+        console.log('[importSkill] FAIL: zip file not found at', zipPath)
         return { success: false, error: 'File not found' }
       }
 
       // 创建临时目录
       const tempDir = path.join(os.tmpdir(), `perseng-skill-import-${Date.now()}`)
       fs.mkdirSync(tempDir, { recursive: true })
+      console.log('[importSkill] tempDir =', tempDir)
 
       try {
         // 解压
+        console.log('[importSkill] step: extract zip, AdmZip type =', typeof AdmZip)
         const zip = new AdmZip(zipPath)
         zip.extractAllTo(tempDir, true)
+        console.log('[importSkill] extracted, entries =', fs.readdirSync(tempDir))
 
         // 查找包含 SKILL.md 的目录
         let skillDir: string | null = null
@@ -734,12 +743,15 @@ export class AgentXService {
         }
 
         if (!skillDir || !skillName) {
+          console.log('[importSkill] FAIL: SKILL.md not found in zip, entries =', entries)
           return { success: false, error: 'Invalid skill structure: SKILL.md not found' }
         }
+        console.log('[importSkill] found skillDir =', skillDir, 'skillName =', skillName)
 
         // 确保 skills 目录存在
         const skillsDir = this.getSkillsDir()
         fs.mkdirSync(skillsDir, { recursive: true })
+        console.log('[importSkill] skillsDir =', skillsDir)
 
         // 目标目录
         const targetDir = path.join(skillsDir, skillName)
@@ -751,6 +763,7 @@ export class AgentXService {
 
         // 复制文件
         this.copyDirSync(skillDir, targetDir)
+        console.log('[importSkill] OK: copied to', targetDir, 'contents =', fs.readdirSync(targetDir))
 
         return { success: true, skillName }
       } finally {
@@ -762,6 +775,7 @@ export class AgentXService {
         }
       }
     } catch (error) {
+      console.error('[importSkill] CRASH:', error)
       logger.error('Failed to import skill:', String(error))
       return { success: false, error: String(error) }
     }

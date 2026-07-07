@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Perseng** (11041 symbols, 21979 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **perseng** (11079 symbols, 22017 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -24,10 +24,10 @@ This project is indexed by GitNexus as **Perseng** (11041 symbols, 21979 relatio
 
 | Resource | Use for |
 |----------|---------|
-| `gitnexus://repo/Perseng/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/Perseng/clusters` | All functional areas |
-| `gitnexus://repo/Perseng/processes` | All execution flows |
-| `gitnexus://repo/Perseng/process/{name}` | Step-by-step execution trace |
+| `gitnexus://repo/perseng/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/perseng/clusters` | All functional areas |
+| `gitnexus://repo/perseng/processes` | All execution flows |
+| `gitnexus://repo/perseng/process/{name}` | Step-by-step execution trace |
 
 ## CLI
 

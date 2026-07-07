@@ -84,7 +84,9 @@ interface ElectronAPI {
   getToolSchema: (payload: { id: string; source?: string }) => Promise<any>
   getRolePrompt: (roleId: string, source: string, options?: { roleResources?: string }) => Promise<any>
   getRoleAvatar: (payload: { id: string; source?: string }) => Promise<{ success: boolean; data: string | null }>
-  uploadRoleAvatar: (payload: { id: string; source?: string; imagePath: string }) => Promise<{ success: boolean; message?: string }>
+  // KNUTH-FIX 2026-07-06: 加 version 字段用于区分 V1/V2 物理目录
+  // （V2 角色物理路径在 ~/.rolex/roles/<id>/，V1 在 ~/.perseng/resource/role/<id>/）
+  uploadRoleAvatar: (payload: { id: string; source?: string; imagePath: string; version?: string }) => Promise<{ success: boolean; message?: string }>
   invoke: (channel: string, ...args: any[]) => Promise<any>
   // Dialog API
   dialog: {
@@ -236,7 +238,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getToolSchema: (payload: { id: string; source?: string }) => ipcRenderer.invoke('resources:getToolSchema', payload),
   getRolePrompt: (roleId: string, source: string, options?: { roleResources?: string }) => ipcRenderer.invoke('resources:previewPrompt', { id: roleId, type: 'role', source, roleResources: options?.roleResources }),
   getRoleAvatar: (payload: { id: string; source?: string }) => ipcRenderer.invoke('resources:getRoleAvatar', payload),
-  uploadRoleAvatar: (payload: { id: string; source?: string; imagePath: string }) => ipcRenderer.invoke('resources:uploadRoleAvatar', payload),
+  uploadRoleAvatar: (payload) => ipcRenderer.invoke('resources:uploadRoleAvatar', payload),
   invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
   // Dialog API
   dialog: {
