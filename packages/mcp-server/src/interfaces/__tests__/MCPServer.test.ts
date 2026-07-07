@@ -1,6 +1,25 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Tool, Resource, Prompt } from '@modelcontextprotocol/sdk/types.js';
-import type { MCPServer, MCPServerOptions, ServerState, ToolHandler } from '../MCPServer.js';
+import type { MCPServer, MCPServerOptions, ToolHandler } from '../MCPServer.js';
+import { BaseMCPServer } from '~/servers/BaseMCPServer.js';
+
+class TestMCPServer extends BaseMCPServer {
+  protected async connectTransport(): Promise<void> {}
+
+  protected async disconnectTransport(): Promise<void> {}
+
+  protected async readResource(resource: Resource): Promise<any> {
+    return {
+      contents: [
+        {
+          uri: resource.uri,
+          mimeType: resource.mimeType || 'text/plain',
+          text: `Content of ${resource.uri}`
+        }
+      ]
+    };
+  }
+}
 
 /**
  * Knuth形式化测试规约
@@ -14,6 +33,20 @@ import type { MCPServer, MCPServerOptions, ServerState, ToolHandler } from '../M
 
 describe('MCPServer Interface Contract Tests', () => {
   let server: MCPServer;
+  const options: MCPServerOptions = {
+    name: 'contract-test-server',
+    version: '1.0.0'
+  };
+
+  beforeEach(() => {
+    server = new TestMCPServer(options);
+  });
+
+  afterEach(async () => {
+    if (server?.isRunning()) {
+      await server.stop();
+    }
+  });
   
   // 测试工具定义
   const createTestTool = (name: string): Tool & { handler: ToolHandler } => ({

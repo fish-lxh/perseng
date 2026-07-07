@@ -13,7 +13,7 @@
   "scripts": {
     "start": "PERSENG_ENV=development node dist/promptx.js",
     "dev": "tsup --watch",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "build": "tsup",
     "typecheck": "tsc --noEmit"

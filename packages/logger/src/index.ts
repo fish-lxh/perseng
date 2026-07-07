@@ -88,8 +88,13 @@ export function createLogger(config: LoggerConfig = {}): pino.Logger {
   
   // For Electron desktop app, avoid worker thread issues
   const isElectron = process.versions && process.versions.electron
+  const forceSyncLogging =
+    Boolean(isElectron) ||
+    process.env.PERSENG_NO_WORKERS === 'true' ||
+    process.env.VITEST === 'true' ||
+    process.env.NODE_ENV === 'test'
   
-  if (isElectron || process.env.PERSENG_NO_WORKERS === 'true') {
+  if (forceSyncLogging) {
     // For Electron: use sync mode to avoid worker thread issues
     // Simply disable transports and use basic pino with file destination
 
