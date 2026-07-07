@@ -204,19 +204,7 @@ export class ContextManager {
   estimateTokens(messages: Message[]): number {
     let totalChars = 0;
     for (const m of messages) {
-      let msgChars = 0;
-      if (typeof m.content === "string") {
-        msgChars = m.content.length;
-      } else if (Array.isArray(m.content)) {
-        for (const p of m.content) {
-          const part = p as { type?: string; text?: string };
-          if (part.type === "text" && typeof part.text === "string") {
-            msgChars += part.text.length;
-          } else if (part.type === "image" || part.type === "file") {
-            msgChars += 4000; // ~1K tokens rough estimate
-          }
-        }
-      }
+      let msgChars = this.estimateMessageChars(m);
 
       // tool 消息加权 (tool_result 通常含大量 JSON)
       if (m.role === "tool") {
@@ -338,7 +326,7 @@ export class ContextManager {
     const limit = this.options.perMessageCharLimit;
     const lines: string[] = [];
     for (const m of messages) {
-      const text = this.extractText(m.content);
+      const text = this.extractMessageText(m);
       if (!text) continue;
       const truncated = text.length > limit ? text.slice(0, limit) + "…" : text;
       const label = this.roleLabel(m.role);
@@ -383,6 +371,133 @@ export class ContextManager {
     return "";
   }
 
+  private extractMessageText(message: Message): string {
+    if ("content" in message) {
+      return this.extractText(message.content);
+    }
+
+    if ("toolCall" in message) {
+      const input = this.stringifyUnknown(message.toolCall.input);
+      return [`Tool call: ${message.toolCall.name}`, input].filter(Boolean).join("\n");
+    }
+
+    if ("toolResult" in message) {
+      return this.extractToolResultText(message.toolResult.output);
+    }
+
+    return "";
+  }
+
+  private estimateMessageChars(message: Message): number {
+    if ("content" in message) {
+      return this.estimateContentChars(message.content);
+    }
+
+    if ("toolCall" in message) {
+      return this.extractMessageText(message).length;
+    }
+
+    if ("toolResult" in message) {
+      return this.estimateToolResultChars(message.toolResult.output);
+    }
+
+    return 0;
+  }
+
+  private estimateContentChars(content: unknown): number {
+    if (typeof content === "string") {
+      return content.length;
+    }
+
+    if (!Array.isArray(content)) {
+      return 0;
+    }
+
+    let total = 0;
+    for (const part of content) {
+      const typedPart = part as { type?: string; text?: string; reasoning?: string };
+      if (typedPart.type === "text" && typeof typedPart.text === "string") {
+        total += typedPart.text.length;
+      } else if (typedPart.type === "thinking" && typeof typedPart.reasoning === "string") {
+        total += typedPart.reasoning.length;
+      } else if (typedPart.type === "image" || typedPart.type === "file") {
+        total += 4000; // ~1K tokens rough estimate
+      }
+    }
+    return total;
+  }
+
+  private estimateToolResultChars(output: unknown): number {
+    if (!output || typeof output !== "object") {
+      return this.stringifyUnknown(output).length;
+    }
+
+    const typedOutput = output as {
+      type?: string;
+      value?: unknown;
+      reason?: string;
+    };
+
+    if (typedOutput.type === "content") {
+      return this.estimateContentChars(typedOutput.value);
+    }
+
+    if (
+      (typedOutput.type === "text" || typedOutput.type === "error-text") &&
+      typeof typedOutput.value === "string"
+    ) {
+      return typedOutput.value.length;
+    }
+
+    if (typedOutput.type === "execution-denied") {
+      return typedOutput.reason?.length ?? 0;
+    }
+
+    return this.stringifyUnknown(typedOutput.value ?? output).length;
+  }
+
+  private extractToolResultText(output: unknown): string {
+    if (!output || typeof output !== "object") {
+      return this.stringifyUnknown(output);
+    }
+
+    const typedOutput = output as {
+      type?: string;
+      value?: unknown;
+      reason?: string;
+    };
+
+    if (typedOutput.type === "content") {
+      return this.extractText(typedOutput.value);
+    }
+
+    if (
+      (typedOutput.type === "text" || typedOutput.type === "error-text") &&
+      typeof typedOutput.value === "string"
+    ) {
+      return typedOutput.value;
+    }
+
+    if (typedOutput.type === "execution-denied") {
+      return typedOutput.reason ?? "execution denied";
+    }
+
+    return this.stringifyUnknown(typedOutput.value ?? output);
+  }
+
+  private stringifyUnknown(value: unknown): string {
+    if (typeof value === "string") {
+      return value;
+    }
+
+    try {
+      const serialized = JSON.stringify(value);
+      return serialized ?? String(value);
+    } catch {
+      return String(value);
+    }
+  }
+
   /**
    * 启发式摘要 (无 LLM 调用, 零 token 成本)
    *
@@ -395,7 +510,7 @@ export class ContextManager {
     const limit = this.options.perMessageCharLimit;
 
     for (const m of messages) {
-      const text = this.extractText(m.content);
+      const text = this.extractMessageText(m);
       if (!text) continue;
       const truncated = text.length > limit ? text.slice(0, limit) + "…" : text;
       if (m.role === "user") userTurns.push(truncated);

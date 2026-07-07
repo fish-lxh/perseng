@@ -99,8 +99,8 @@ export class RuntimeImpl implements Runtime {
         this.bus.emit({
           type: "context_warning",
           timestamp: event.timestamp,
-          source: "runtime",
-          category: "notification",
+          source: "agent",
+          category: "state",
           intent: "notification",
           data: event,
         });
@@ -440,6 +440,9 @@ export class RuntimeImpl implements Runtime {
         // 按 updatedAt 降序排序, 取最新的
         const sorted = [...records].sort((a, b) => b.updatedAt - a.updatedAt);
         const latest = sorted[0];
+        if (!latest) {
+          return null;
+        }
         const online = this.isImageOnline(latest.imageId);
         return this.toImageListItemResult(latest, online);
       },

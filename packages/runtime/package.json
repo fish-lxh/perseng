@@ -21,7 +21,7 @@
   "scripts": {
     "build": "bun run build.ts",
     "clean": "rm -rf dist",
-    "lint": "eslint .",
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:watch": "bun test --watch"

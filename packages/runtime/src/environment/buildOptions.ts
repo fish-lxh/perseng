@@ -5,7 +5,11 @@
  */
 
 import { spawn } from "child_process";
-import type { Options, McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  Options,
+  McpServerConfig as SDKMcpServerConfig,
+} from "@anthropic-ai/claude-agent-sdk";
+import type { McpServerConfig as RuntimeMcpServerConfig } from "@agentxjs/types/runtime";
 import { createLogger } from "@agentxjs/common";
 import { RuntimeEnvironment } from "../RuntimeEnvironment";
 
@@ -25,7 +29,7 @@ export interface EnvironmentContext {
   maxTurns?: number;
   maxThinkingTokens?: number;
   /** MCP servers configuration */
-  mcpServers?: Record<string, McpServerConfig>;
+  mcpServers?: Record<string, RuntimeMcpServerConfig>;
   /**
    * Extra CLI flags to pass directly to the Claude Code subprocess.
    *
@@ -47,6 +51,27 @@ export interface EnvironmentContext {
    * ANTHROPIC_BASE_URL and ANTHROPIC_API_KEY.
    */
   extraEnv?: Record<string, string>;
+}
+
+function normalizeMcpServerConfig(config: RuntimeMcpServerConfig): SDKMcpServerConfig {
+  if (config.type === "sdk" && "instance" in config) {
+    return {
+      ...config,
+      instance: config.instance as never,
+    } as SDKMcpServerConfig;
+  }
+
+  return config as SDKMcpServerConfig;
+}
+
+function normalizeMcpServers(
+  servers: Record<string, RuntimeMcpServerConfig>,
+): Record<string, SDKMcpServerConfig> {
+  const normalized: Record<string, SDKMcpServerConfig> = {};
+  for (const [name, config] of Object.entries(servers)) {
+    normalized[name] = normalizeMcpServerConfig(config);
+  }
+  return normalized;
 }
 
 /**
@@ -150,7 +175,7 @@ export function buildOptions(
 
   // MCP servers
   if (context.mcpServers) {
-    options.mcpServers = context.mcpServers;
+    options.mcpServers = normalizeMcpServers(context.mcpServers);
     logger.info("MCP servers configured", {
       serverNames: Object.keys(context.mcpServers),
     });
