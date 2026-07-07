@@ -18,6 +18,7 @@ import type { AgentXResponse } from "@agentxjs/types/agentx";
 import type { Message, UserContentPart } from "@agentxjs/types/agent";
 import { BaseEventHandler } from "./BaseEventHandler";
 import { ContextManager } from "../environment/ContextManager";
+import { SummarizationHelper } from "./commands/SummarizationHelper";
 import { createLogger } from "@agentxjs/common";
 
 const logger = createLogger("runtime/CommandHandler");
@@ -142,8 +143,12 @@ function createSystemError(
  */
 export class CommandHandler extends BaseEventHandler {
   private readonly ops: RuntimeOperations;
-  /** KNUTH-FEAT 2026-07-07: 上下文压缩管理器 (image 边界 summarize + threshold emit). 可选注入. */
-  private readonly contextManager: ContextManager | null;
+  /**
+   * KNUTH-FEAT 2026-07-07: 上下文压缩管理器封装. 承载 image 边界 summarize +
+   * threshold emit 逻辑, 不再由 CommandHandler 直接持有 ContextManager.
+   * 构造期接受可空注入 (单测环境可传 null).
+   */
+  private readonly summarizationHelper: SummarizationHelper;
 
   constructor(
     bus: SystemBus,
@@ -152,7 +157,10 @@ export class CommandHandler extends BaseEventHandler {
   ) {
     super(bus);
     this.ops = operations;
-    this.contextManager = contextManager ?? null;
+    this.summarizationHelper = new SummarizationHelper(
+      operations,
+      contextManager ?? null,
+    );
 
     this.bindHandlers();
     logger.debug("CommandHandler created");
@@ -463,7 +471,7 @@ export class CommandHandler extends BaseEventHandler {
 
     try {
       // KNUTH-FEAT 2026-07-07: image 边界 summarization — 检查上一个 image, 必要时压缩
-      const enrichedConfig = await this.maybeSummarizePreviousImage(containerId, config);
+      const enrichedConfig = await this.summarizationHelper.enrich(containerId, config);
 
       const record = await this.ops.createImage(containerId, enrichedConfig);
       this.bus.emit(
@@ -483,111 +491,6 @@ export class CommandHandler extends BaseEventHandler {
         })
       );
     }
-  }
-
-  /**
-   * KNUTH-FEAT 2026-07-07: 如果上一个 image 的历史超阈值, 调 ContextManager.summarize,
-   * 并把 summary 以 `<earlier_conversation_summary>` 块注入新 image 的 systemPrompt.
-   *
-   * 三个降级路径, 任一异常 → 返回原 config:
-   * 1. ContextManager 未注入 (单测环境) → 跳过
-   * 2. Container 没有 prior image → 跳过
-   * 3. SDK summarize 失败 → fallback 到启发式; 启发式也失败 → 用 "summary unavailable" 占位
-   *   (失败也不阻塞 image 创建)
-   */
-  private async maybeSummarizePreviousImage(
-    containerId: string,
-    config: {
-      name?: string;
-      description?: string;
-      systemPrompt?: string;
-      mcpServers?: Record<string, McpServerConfig>;
-    },
-  ): Promise<{
-    name?: string;
-    description?: string;
-    systemPrompt?: string;
-    mcpServers?: Record<string, McpServerConfig>;
-  }> {
-    if (!this.contextManager) {
-      return config;
-    }
-
-    let previousImage;
-    try {
-      previousImage = await this.ops.getMostRecentImageInContainer(containerId);
-    } catch (err) {
-      logger.warn("Failed to look up previous image, skipping summarization", {
-        containerId,
-        error: String(err),
-      });
-      return config;
-    }
-
-    if (!previousImage) {
-      return config;
-    }
-
-    let messages: Message[];
-    try {
-      messages = await this.ops.getImageMessages(previousImage.imageId);
-    } catch (err) {
-      logger.warn("Failed to load previous image messages, skipping summarization", {
-        imageId: previousImage.imageId,
-        error: String(err),
-      });
-      return config;
-    }
-
-    if (!this.contextManager.shouldSummarize(messages)) {
-      return config;
-    }
-
-    logger.info("Summarizing previous image before creating new one", {
-      containerId,
-      previousImageId: previousImage.imageId,
-      messageCount: messages.length,
-    });
-
-    let summary: string;
-    try {
-      summary = await this.contextManager.summarize(messages);
-    } catch (err) {
-      logger.error("Summarization failed (both SDK and heuristic), proceeding without", {
-        error: String(err),
-      });
-      // 仍然 inject 一个 summary block 标注失败, 让 AI 知道"之前有过对话但已被压缩"
-      summary = "(earlier conversation could not be summarized - previous context is lost)";
-    }
-
-    const enrichedConfig = {
-      ...config,
-      systemPrompt: this.injectSummary(config.systemPrompt, summary),
-    };
-
-    logger.info("Injected summary into new image systemPrompt", {
-      containerId,
-      previousImageId: previousImage.imageId,
-      fromMessages: messages.length,
-      summaryLength: summary.length,
-      summaryPreview: summary.slice(0, 120),
-    });
-
-    return enrichedConfig;
-  }
-
-  /**
-   * KNUTH-FEAT 2026-07-07: 把 summary 注入 systemPrompt
-   *
-   * 包装在 `<earlier_conversation_summary>` 块里, 让 LLM 明确识别边界
-   * (Claude 可以据此理解"这是过去的对话压缩结果, 不要把它当作新对话").
-   */
-  private injectSummary(
-    originalSystemPrompt: string | undefined,
-    summary: string,
-  ): string {
-    const summaryBlock = `\n\n<earlier_conversation_summary>\n${summary}\n</earlier_conversation_summary>\n`;
-    return (originalSystemPrompt ?? "") + summaryBlock;
   }
 
   private async handleImageRun(event: {
