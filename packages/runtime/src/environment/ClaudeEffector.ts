@@ -15,6 +15,7 @@ import { createLogger } from "@agentxjs/common";
 import { buildSDKUserMessage } from "./helpers";
 import type { ClaudeReceptor, ReceptorMeta } from "./ClaudeReceptor";
 import { SDKQueryLifecycle } from "./SDKQueryLifecycle";
+import { ContextManager } from "./ContextManager";
 
 const logger = createLogger("environment/ClaudeEffector");
 
@@ -64,6 +65,8 @@ export class ClaudeEffector implements Effector {
   private readonly config: ClaudeEffectorConfig;
   private readonly receptor: ClaudeReceptor;
   private readonly queryLifecycle: SDKQueryLifecycle;
+  /** KNUTH-FEAT 2026-07-07: token 用量跟踪 + 阈值警告. 可选注入. */
+  private readonly contextManager: ContextManager | null;
 
   private currentMeta: ReceptorMeta | null = null;
   private wasInterrupted = false;
@@ -75,9 +78,14 @@ export class ClaudeEffector implements Effector {
   /** Heartbeat timer during tool execution (keeps idle timeout from firing) */
   private toolHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(config: ClaudeEffectorConfig, receptor: ClaudeReceptor) {
+  constructor(
+    config: ClaudeEffectorConfig,
+    receptor: ClaudeReceptor,
+    contextManager?: ContextManager | null,
+  ) {
     this.config = config;
     this.receptor = receptor;
+    this.contextManager = contextManager ?? null;
 
     // Create SDK lifecycle with callbacks
     this.queryLifecycle = new SDKQueryLifecycle(
@@ -245,6 +253,9 @@ export class ClaudeEffector implements Effector {
           this.startToolHeartbeat();
         }
       }
+
+      // KNUTH-FEAT 2026-07-07: 提取 token usage + 累加 (message_start / message_delta)
+      this.extractAndRecordUsage(msg);
     }
   }
 
@@ -282,6 +293,9 @@ export class ClaudeEffector implements Effector {
       wasInterrupted: this.wasInterrupted,
     });
 
+    // KNUTH-FEAT 2026-07-07: result event 也含 usage (final turn 的 input + output)
+    this.extractAndRecordUsage(msg);
+
     // Handle user interrupt
     if (resultMsg.subtype === "error_during_execution" && this.wasInterrupted) {
       this.receptor.emitInterrupted("user_interrupt", this.currentMeta || undefined);
@@ -316,6 +330,28 @@ export class ClaudeEffector implements Effector {
   private handleListenerExit(reason: "normal" | "abort" | "error"): void {
     logger.debug("SDK listener exited", { reason });
     this.cleanupPendingRequest();
+  }
+
+  /**
+   * KNUTH-FEAT 2026-07-07: 从 SDK 事件提取 usage 并累加
+   *
+   * Anthropic API usage 字段位置:
+   * - message_start.event.message.usage = { input_tokens, output_tokens, cache_* }
+   * - message_delta.event.usage = { output_tokens } (final turn 的 output 增量)
+   * - result.usage = { input_tokens, output_tokens, cache_* } (final turn 完整 usage)
+   *
+   * 兼容策略: 多路径提取, 任一路径命中即可
+   */
+  private extractAndRecordUsage(msg: SDKMessage): void {
+    if (!this.contextManager || !this.currentMeta) return;
+
+    const imageId = this.currentMeta.context?.imageId;
+    if (!imageId) return;
+
+    const usage = extractUsageFromSDKMessage(msg);
+    if (!usage) return;
+
+    this.contextManager.recordUsage(imageId, usage);
   }
 
   /**
@@ -398,4 +434,75 @@ export class ClaudeEffector implements Effector {
     this.queryLifecycle.dispose();
     logger.debug("ClaudeEffector disposed", { agentId: this.config.agentId });
   }
+}
+
+/**
+ * KNUTH-FEAT 2026-07-07: 从 SDK message 提取 usage 字段
+ *
+ * 兼容多种 SDK 消息格式 (防御式编程, 缺字段返回 null):
+ * - stream_event: event.message.usage / event.usage (Anthropic streaming)
+ * - result: msg.usage (SDK final result)
+ * - assistant: msg.message.usage (SDK assistant message)
+ *
+ * 返回标准化 { inputTokens, outputTokens }
+ */
+export function extractUsageFromSDKMessage(msg: SDKMessage): {
+  inputTokens?: number;
+  outputTokens?: number;
+} | null {
+  if (!msg || typeof msg !== "object") return null;
+
+  const m = msg as Record<string, unknown>;
+
+  // 路径 1: stream_event 的 event.message.usage
+  const evt = m.event as { message?: { usage?: unknown }; usage?: unknown } | undefined;
+  if (evt) {
+    if (evt.message && typeof evt.message === "object") {
+      const u = (evt.message as { usage?: unknown }).usage;
+      const parsed = normalizeUsage(u);
+      if (parsed) return parsed;
+    }
+    // 路径 2: stream_event 的 event.usage (message_delta final output)
+    if (evt.usage) {
+      const parsed = normalizeUsage(evt.usage);
+      if (parsed) return parsed;
+    }
+  }
+
+  // 路径 3: result / assistant message 的 msg.usage
+  if (m.usage) {
+    const parsed = normalizeUsage(m.usage);
+    if (parsed) return parsed;
+  }
+
+  // 路径 4: msg.message.usage
+  const innerMsg = m.message as { usage?: unknown } | undefined;
+  if (innerMsg && innerMsg.usage) {
+    const parsed = normalizeUsage(innerMsg.usage);
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
+function normalizeUsage(u: unknown): { inputTokens?: number; outputTokens?: number } | null {
+  if (!u || typeof u !== "object") return null;
+  const usage = u as Record<string, unknown>;
+
+  const inputTokens =
+    typeof usage.input_tokens === "number"
+      ? usage.input_tokens
+      : typeof usage.inputTokens === "number"
+        ? usage.inputTokens
+        : undefined;
+
+  const outputTokens =
+    typeof usage.output_tokens === "number"
+      ? usage.output_tokens
+      : typeof usage.outputTokens === "number"
+        ? usage.outputTokens
+        : undefined;
+
+  if (inputTokens === undefined && outputTokens === undefined) return null;
+  return { inputTokens, outputTokens };
 }
