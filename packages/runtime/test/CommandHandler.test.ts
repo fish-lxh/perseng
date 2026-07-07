@@ -151,7 +151,7 @@ describe("CommandHandler.handleImageCreate summarization gating", () => {
     });
 
     const handler = new CommandHandler(makeMockBus(), ops, null);
-    await handler.handleImageCreate({
+    await handler.imageCommands.handleImageCreate({
       data: {
         requestId: "req-1",
         containerId: "c1",
@@ -188,7 +188,7 @@ describe("CommandHandler.handleImageCreate summarization gating", () => {
     });
 
     const handler = new CommandHandler(makeMockBus(), ops, cm);
-    await handler.handleImageCreate({
+    await handler.imageCommands.handleImageCreate({
       data: {
         requestId: "req-2",
         containerId: "c1",
@@ -223,7 +223,7 @@ describe("CommandHandler.handleImageCreate summarization gating", () => {
     });
 
     const handler = new CommandHandler(makeMockBus(), ops, cm);
-    await handler.handleImageCreate({
+    await handler.imageCommands.handleImageCreate({
       data: {
         requestId: "req-3",
         containerId: "c1",
@@ -264,7 +264,7 @@ describe("CommandHandler.handleImageCreate summarization gating", () => {
     });
 
     const handler = new CommandHandler(makeMockBus(), ops, cm);
-    await handler.handleImageCreate({
+    await handler.imageCommands.handleImageCreate({
       data: {
         requestId: "req-4",
         containerId: "c1",
@@ -308,7 +308,7 @@ describe("CommandHandler.handleImageCreate summarization gating", () => {
     });
 
     const handler = new CommandHandler(makeMockBus(), ops, cm);
-    await handler.handleImageCreate({
+    await handler.imageCommands.handleImageCreate({
       data: {
         requestId: "req-5",
         containerId: "c1",
@@ -352,7 +352,7 @@ describe("CommandHandler.handleImageCreate summarization gating", () => {
     const handler = new CommandHandler(makeMockBus(), ops, cm);
 
     // 应该不抛错 (image 创建不会被 summarization 错误阻塞)
-    await handler.handleImageCreate({
+    await handler.imageCommands.handleImageCreate({
       data: {
         requestId: "req-6",
         containerId: "c1",
