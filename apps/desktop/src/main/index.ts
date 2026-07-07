@@ -717,6 +717,11 @@ class PersengDesktopApp {
     // 打开外部链接 - 在新的 Electron 窗口中打开
     ipcMain.handle('shell:openExternal', async (_event, url: string) => {
       try {
+        const parsedUrl = new URL(url)
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+          throw new Error(`Unsupported URL protocol: ${parsedUrl.protocol}`)
+        }
+
         const { BrowserWindow } = await import('electron')
 
         // 创建新的浏览器窗口
@@ -731,9 +736,9 @@ class PersengDesktopApp {
         })
 
         // 加载 URL
-        await browserWindow.loadURL(url)
+        await browserWindow.loadURL(parsedUrl.toString())
 
-        logger.info('Opened URL in Electron browser window:', url)
+        logger.info('Opened URL in Electron browser window:', parsedUrl.toString())
       } catch (error) {
         logger.error('Failed to open URL in browser window:', String(error))
         throw error

@@ -31,6 +31,36 @@ async function clearAndCopyAvatar(
   await fs.copy(srcPath, pathMod.join(targetDir, `profile.${ext}`), { overwrite: true })
 }
 
+function assertSafeResourceId(id: string): void {
+  if (!/^[A-Za-z0-9._-]+$/.test(id)) {
+    throw new Error('Invalid resource ID')
+  }
+}
+
+function assertSafeFileName(fileName: string, expectedExt?: string): void {
+  if (fileName.includes('/') || fileName.includes('\\') || fileName.includes('..')) {
+    throw new Error('Invalid file name')
+  }
+  if (expectedExt && !fileName.endsWith(expectedExt)) {
+    throw new Error(`Invalid file extension, expected ${expectedExt}`)
+  }
+}
+
+function resolveSafeRelativePath(baseDir: string, relativePath: string): string {
+  if (!relativePath || path.isAbsolute(relativePath)) {
+    throw new Error('Invalid relative path')
+  }
+
+  const resolvedBase = path.resolve(baseDir)
+  const resolvedTarget = path.resolve(resolvedBase, relativePath)
+  const relative = path.relative(resolvedBase, resolvedTarget)
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('Path escapes resource directory')
+  }
+
+  return resolvedTarget
+}
+
 /**
  * Resource List Window - 资源管理窗口
  */
@@ -343,6 +373,7 @@ export class ResourceListWindow {
         if (!id || !type) {
           return { success: false, message: t('resources.missingParams') }
         }
+        assertSafeResourceId(id)
 
         const path = require('path')
         const fs = require('fs-extra')
@@ -443,6 +474,7 @@ export class ResourceListWindow {
         if (!id || !type) {
           return { success: false, message: t('resources.missingParams') }
         }
+        assertSafeResourceId(id)
         if (source !== 'user') {
           return { success: false, message: t('resources.onlyUserDeletable') }
         }
@@ -509,6 +541,7 @@ export class ResourceListWindow {
         const type = payload?.type
         const source = payload?.source ?? 'user'
         if (!id || !type) return { success: false, message: t('resources.missingParams') }
+        assertSafeResourceId(id)
 
         const path = require('path')
         const fs = require('fs-extra')
@@ -581,6 +614,7 @@ export class ResourceListWindow {
         const { id, type, relativePath } = payload || {}
         const source = payload?.source ?? 'user'
         if (!id || !type || !relativePath) return { success: false, message: t('resources.missingParams') }
+        assertSafeResourceId(id)
 
         const path = require('path')
         const fs = require('fs-extra')
@@ -610,7 +644,7 @@ export class ResourceListWindow {
           }
         }
 
-        const absPath = path.join(baseDir!, relativePath)
+        const absPath = resolveSafeRelativePath(baseDir!, relativePath)
         const exists = await fs.pathExists(absPath)
         if (!exists) return { success: false, message: t('resources.fileNotExists') + `: ${relativePath}` }
         const content = await fs.readFile(absPath, 'utf-8')
@@ -627,6 +661,7 @@ export class ResourceListWindow {
         const { id, type, relativePath, content } = payload || {}
         const source = payload?.source ?? 'user'
         if (!id || !type || !relativePath) return { success: false, message: t('resources.missingParams') }
+        assertSafeResourceId(id)
         if (source !== 'user') return { success: false, message: t('resources.onlyUserEditable') }
 
         const path = require('path')
@@ -634,7 +669,7 @@ export class ResourceListWindow {
         const os = require('os')
 
         const baseDir = path.join(os.homedir(), '.perseng', 'resource', type, id)
-        const absPath = path.join(baseDir, relativePath)
+        const absPath = resolveSafeRelativePath(baseDir, relativePath)
         const exists = await fs.pathExists(absPath)
         if (!exists) return { success: false, message: t('resources.fileNotExists') + `: ${relativePath}` }
 
@@ -758,6 +793,7 @@ export class ResourceListWindow {
 
           // 使用自定义ID或原ID
           const finalId = customId || resourceId
+          assertSafeResourceId(finalId)
 
           // 目标目录
           const userResourceDir = path.join(os.homedir(), '.perseng', 'resource', type, finalId)
@@ -906,6 +942,7 @@ export class ResourceListWindow {
           }
 
           const finalId = customId || roleId
+          assertSafeResourceId(finalId)
           const targetDir = pathMod.join(os.homedir(), '.rolex', 'roles', finalId, 'identity')
 
           if (await fs.pathExists(targetDir)) {
@@ -1029,6 +1066,7 @@ export class ResourceListWindow {
     // V2 角色数据（身份、目标、组织）
     ipcMain.handle('resources:getV2RoleData', async (_evt, payload: { roleId: string }) => {
       try {
+        assertSafeResourceId(payload.roleId)
         const core = await import('@promptx/core')
         const coreExports = (core as any).default || core
         const { RolexActionDispatcher } = (coreExports as any).rolex
@@ -1076,6 +1114,7 @@ export class ResourceListWindow {
     // V2 角色文件列表（~/.rolex/roles/<id>/identity/）
     ipcMain.handle('resources:listV2RoleFiles', async (_evt, payload: { roleId: string }) => {
       try {
+        assertSafeResourceId(payload.roleId)
         const fs = require('fs-extra')
         const os = require('os')
         const identityDir = path.join(os.homedir(), '.rolex', 'roles', payload.roleId, 'identity')
@@ -1093,6 +1132,8 @@ export class ResourceListWindow {
     // V2 角色文件读取
     ipcMain.handle('resources:readV2RoleFile', async (_evt, payload: { roleId: string; fileName: string }) => {
       try {
+        assertSafeResourceId(payload.roleId)
+        assertSafeFileName(payload.fileName, '.feature')
         const fs = require('fs-extra')
         const os = require('os')
         const filePath = path.join(os.homedir(), '.rolex', 'roles', payload.roleId, 'identity', payload.fileName)
@@ -1109,6 +1150,8 @@ export class ResourceListWindow {
     // V2 角色文件保存（仅用户角色）
     ipcMain.handle('resources:saveV2RoleFile', async (_evt, payload: { roleId: string; fileName: string; content: string }) => {
       try {
+        assertSafeResourceId(payload.roleId)
+        assertSafeFileName(payload.fileName, '.feature')
         const fs = require('fs-extra')
         const os = require('os')
         const filePath = path.join(os.homedir(), '.rolex', 'roles', payload.roleId, 'identity', payload.fileName)
@@ -1122,6 +1165,7 @@ export class ResourceListWindow {
     // V2 角色身份结构（从数据库读取）
     ipcMain.handle('rolex:getIdentityNodes', async (_evt, payload: { roleId: string }) => {
       try {
+        assertSafeResourceId(payload.roleId)
         const core = require('@promptx/core')
         const bridge = core.rolex.getRolexBridge()
         const identityText = await bridge.identity(payload.roleId)
@@ -1171,6 +1215,7 @@ export class ResourceListWindow {
         const { id } = payload || {}
         const source = payload?.source ?? 'user'
         if (!id) return { success: true, data: null }
+        assertSafeResourceId(id)
 
         const pathMod = require('path')
         const fs = require('fs-extra')
@@ -1236,6 +1281,7 @@ export class ResourceListWindow {
         const source = payload?.source ?? 'user'
         const version = payload?.version ?? 'v1'
         if (!id || !imagePath) return { success: false, message: 'Missing params' }
+        assertSafeResourceId(id)
 
         const pathMod = require('path')
         const fs = require('fs-extra')

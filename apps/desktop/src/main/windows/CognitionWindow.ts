@@ -16,7 +16,14 @@ export class CognitionWindow {
   }
 
   private getCognitionPath(roleId: string): string {
+    this.assertSafeRoleId(roleId)
     return path.join(os.homedir(), '.perseng', 'cognition', roleId)
+  }
+
+  private assertSafeRoleId(roleId: string): void {
+    if (!/^[A-Za-z0-9._-]+$/.test(roleId)) {
+      throw new Error('Invalid role ID')
+    }
   }
 
   private setupIpcHandlers(): void {

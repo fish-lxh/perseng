@@ -424,10 +424,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
 import { createAgentX } from '/agentxjs.js'
 ;(async () => {
   const params = new URLSearchParams(location.search)
-  const wsUrl = params.get('ws')
+  const hashParams = new URLSearchParams(location.hash.startsWith('#') ? location.hash.slice(1) : location.hash)
+  const bootstrapToken = hashParams.get('token')
+  const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws'
+  const wsUrl = `${wsProtocol}://${location.host}/ws`
   const containerId = params.get('containerId') || 'perseng-desktop'
-
-  if (!wsUrl) { showError(t('missingWs')); return }
 
   // ── State ──────────────────────────────────────────────────────────────────
   let agentx = null
@@ -482,7 +483,7 @@ import { createAgentX } from '/agentxjs.js'
       inputPlaceholder: '发送消息...',
       sending: '发送中...', thinking: '思考中...', responding: '回复中...',
       newConvPrefix: '新对话 ', sendFailed: '发送失败: ', createFailed: '创建对话失败: ',
-      error: '错误: ', missingWs: '缺少 WebSocket 地址参数',
+      error: '错误: ', missingWs: '缺少访问令牌',
       connectFailed: '无法连接到 AgentX 服务: ',
       toolPlanning: '规划中', toolExecuting: '执行中', toolSuccess: '完成 ✓', toolError: '失败 ✗',
       toolInput: '输入', toolOutput: '输出',
@@ -496,7 +497,7 @@ import { createAgentX } from '/agentxjs.js'
       inputPlaceholder: 'Send a message...',
       sending: 'Sending...', thinking: 'Thinking...', responding: 'Responding...',
       newConvPrefix: 'New Chat ', sendFailed: 'Send failed: ', createFailed: 'Failed to create chat: ',
-      error: 'Error: ', missingWs: 'Missing WebSocket URL parameter',
+      error: 'Error: ', missingWs: 'Missing access token',
       connectFailed: 'Cannot connect to AgentX service: ',
       toolPlanning: 'Planning', toolExecuting: 'Executing', toolSuccess: 'Done ✓', toolError: 'Failed ✗',
       toolInput: 'Input', toolOutput: 'Output',
@@ -521,6 +522,7 @@ import { createAgentX } from '/agentxjs.js'
 
   // ── Connect ────────────────────────────────────────────────────────────────
   try {
+    await ensureAuthorized()
     agentx = await createAgentX({ serverUrl: wsUrl })
     connectingEl.style.display = 'none'
   } catch (e) {
@@ -765,6 +767,19 @@ import { createAgentX } from '/agentxjs.js'
     sendBtn.disabled = !inputEl.value.trim() || isLoading
   }
   function setStatus(text) { statusBar.textContent = text }
+
+  async function ensureAuthorized() {
+    if (!bootstrapToken) return
+    const response = await fetch('/auth', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${bootstrapToken}` },
+      credentials: 'same-origin'
+    })
+    if (!response.ok) {
+      throw new Error(t('missingWs'))
+    }
+    history.replaceState(null, '', `${location.pathname}${location.search}`)
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   // ── Markdown renderer ──────────────────────────────────────────────────────

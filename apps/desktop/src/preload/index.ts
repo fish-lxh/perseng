@@ -114,7 +114,7 @@ interface ElectronAPI {
   // Web Access API
   webAccess: {
     getStatus: () => Promise<{ enabled: boolean; externalAccess: boolean }>
-    enable: (port?: number) => Promise<{ success: boolean; enabled?: boolean; url?: string; qrCodeDataUrl?: string; port?: number; token?: string; error?: string }>
+    enable: (port?: number) => Promise<{ success: boolean; enabled?: boolean; url?: string; qrCodeDataUrl?: string; port?: number; error?: string }>
     disable: () => Promise<{ success: boolean; error?: string }>
   }
   // Cognition API
@@ -228,6 +228,47 @@ interface ElectronAPI {
   platform: string
 }
 
+const allowedInvokeChannels = new Set([
+  'app:relaunch',
+  'auto-start:disable',
+  'auto-start:enable',
+  'auto-start:status',
+  'check-for-updates',
+  'feishu:getConfig',
+  'feishu:remove',
+  'feishu:saveConfig',
+  'feishu:start',
+  'feishu:status',
+  'feishu:stop',
+  'logs:clear',
+  'logs:delete',
+  'logs:list',
+  'logs:read',
+  'resources:delete',
+  'resources:download',
+  'resources:getV2RoleData',
+  'resources:import',
+  'resources:importV2Role',
+  'resources:listFiles',
+  'resources:readFile',
+  'resources:readV2RoleFile',
+  'resources:saveFile',
+  'resources:saveV2RoleFile',
+  'resources:updateMetadata',
+  'rolex:directory',
+  'rolex:getIdentityNodes',
+  'server-config:get',
+  'server-config:reset',
+  'server-config:update',
+])
+
+function invokeAllowedChannel(channel: string, ...args: any[]): Promise<any> {
+  if (!allowedInvokeChannels.has(channel)) {
+    throw new Error(`IPC channel is not allowed: ${channel}`)
+  }
+  return ipcRenderer.invoke(channel, ...args)
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   getGroupedResources: () => ipcRenderer.invoke('resources:getGrouped'),
   searchResources: (query: string) => ipcRenderer.invoke('resources:search', query),
@@ -239,7 +280,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getRolePrompt: (roleId: string, source: string, options?: { roleResources?: string }) => ipcRenderer.invoke('resources:previewPrompt', { id: roleId, type: 'role', source, roleResources: options?.roleResources }),
   getRoleAvatar: (payload: { id: string; source?: string }) => ipcRenderer.invoke('resources:getRoleAvatar', payload),
   uploadRoleAvatar: (payload) => ipcRenderer.invoke('resources:uploadRoleAvatar', payload),
-  invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+  invoke: invokeAllowedChannel,
   // Dialog API
   dialog: {
     openFile: (options?: OpenDialogOptions) => ipcRenderer.invoke('dialog:openFile', options),
