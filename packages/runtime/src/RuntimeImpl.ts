@@ -537,6 +537,9 @@ export class RuntimeImpl implements Runtime {
       llmConfig: this.llmConfig,
       basePath: this.basePath,
       environmentFactory: this.environmentFactory,
+      // KNUTH-FEAT 2026-07-07: 把 RuntimeImpl 持有的 ContextManager 传给 container,
+      // 进一步传给 RuntimeAgent → ClaudeEffector 用于实时 token 跟踪
+      contextManager: this.contextManager,
       onDisposed: (containerId) => {
         this.containerRegistry.delete(containerId);
       },

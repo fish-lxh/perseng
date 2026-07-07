@@ -14,6 +14,7 @@ import type { SystemBus, EnvironmentFactory } from "@agentxjs/types/runtime/inte
 import { RuntimeAgent } from "./RuntimeAgent";
 import { RuntimeSession } from "./RuntimeSession";
 import { RuntimeSandbox } from "./RuntimeSandbox";
+import { ContextManager } from "../environment/ContextManager";
 import { createLogger } from "@agentxjs/common";
 
 const logger = createLogger("runtime/RuntimeContainer");
@@ -29,6 +30,8 @@ export interface RuntimeContainerContext {
   basePath: string;
   /** Optional environment factory for dependency injection (e.g., mock for testing) */
   environmentFactory?: EnvironmentFactory;
+  /** KNUTH-FEAT 2026-07-07: context manager passed down to ClaudeEffector for live token tracking */
+  contextManager?: ContextManager | null;
   /** Callback when container is disposed */
   onDisposed?: (containerId: string) => void;
 }
@@ -164,6 +167,7 @@ export class RuntimeContainer implements Container {
       image, // Pass full image record for metadata access
       imageRepository: this.context.persistence.images,
       environmentFactory: this.context.environmentFactory,
+      contextManager: this.context.contextManager,
     });
 
     // Register agent and mapping

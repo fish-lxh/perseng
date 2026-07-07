@@ -63,6 +63,7 @@ import { createLogger, generateRequestId } from "@agentxjs/common";
 import { BusDriver } from "./BusDriver";
 import { AgentInteractor } from "./AgentInteractor";
 import { defaultEnvironmentFactory } from "../environment/DefaultEnvironmentFactory";
+import { ContextManager } from "../environment/ContextManager";
 
 const logger = createLogger("runtime/RuntimeAgent");
 
@@ -85,6 +86,8 @@ export interface RuntimeAgentConfig {
   imageRepository: ImageRepository;
   /** Optional environment factory for dependency injection */
   environmentFactory?: EnvironmentFactory;
+  /** KNUTH-FEAT 2026-07-07: context manager passed down to ClaudeEffector for live token tracking */
+  contextManager?: ContextManager | null;
 }
 
 /**
@@ -254,6 +257,8 @@ export class RuntimeAgent implements RuntimeAgentInterface {
         // Persist sdkSessionId to image metadata for future resume
         this.saveSessionId(sdkSessionId);
       },
+      // KNUTH-FEAT 2026-07-07: 透传 contextManager, ClaudeEffector 才会真正调 .recordUsage
+      contextManager: config.contextManager,
     });
 
     // Connect environment to bus

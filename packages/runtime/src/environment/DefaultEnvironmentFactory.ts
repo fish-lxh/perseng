@@ -26,6 +26,9 @@ export const defaultEnvironmentFactory: EnvironmentFactory = {
       resumeSessionId: config.resumeSessionId,
       mcpServers: config.mcpServers,
       onSessionIdCaptured: config.onSessionIdCaptured,
+      // KNUTH-FEAT 2026-07-07: 透传 ContextManager 让 ClaudeEffector 实时跟踪 token
+      // 字段来自 types-augment.d.ts 的声明合并
+      contextManager: config.contextManager,
     });
   },
 };

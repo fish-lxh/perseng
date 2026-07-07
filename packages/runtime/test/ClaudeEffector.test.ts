@@ -6,6 +6,7 @@
 
 import { describe, test, expect } from "bun:test";
 import { extractUsageFromSDKMessage } from "../src/environment/ClaudeEffector";
+import { ContextManager } from "../src/environment/ContextManager";
 
 describe("extractUsageFromSDKMessage", () => {
   test("路径 1: stream_event.message_start 含 input_tokens + output_tokens", () => {
@@ -132,5 +133,40 @@ describe("extractUsageFromSDKMessage", () => {
 
     // 字符串不是 number, normalizeUsage 跳过
     expect(extractUsageFromSDKMessage(msg)).toBeNull();
+  });
+});
+
+describe("ContextManager wire-up (真实链路)", () => {
+  /**
+   * KNUTH-FEAT 2026-07-07: 验证 extractUsageFromSDKMessage 提取的 usage 能直接喂给
+   * ContextManager.recordUsage, 触发阈值警告. 这是 UI toast / TokenUsagePie
+   * 完整链路的 data-layer 端到端测试.
+   */
+  test("extractUsageFromSDKMessage → ContextManager.recordUsage → emit warn event", () => {
+    const events: unknown[] = [];
+    const cm = new ContextManager(
+      { apiKey: "k", model: "m" },
+      (e) => events.push(e),
+      { contextWindow: 1000 },
+    );
+
+    // 模拟 SDK message_start event, 触发 80% 阈值
+    const sdkMsg = {
+      type: "stream_event",
+      event: {
+        type: "message_start",
+        message: { usage: { input_tokens: 850, output_tokens: 1 } },
+      },
+    } as unknown as Parameters<typeof extractUsageFromSDKMessage>[0];
+
+    const usage = extractUsageFromSDKMessage(sdkMsg);
+    expect(usage).not.toBeNull();
+    cm.recordUsage("img-w", usage!);
+
+    expect(events.length).toBe(1);
+    const evt = events[0] as { type: string; severity: string; imageId: string };
+    expect(evt.type).toBe("context_warning");
+    expect(evt.severity).toBe("warn");
+    expect(evt.imageId).toBe("img-w");
   });
 });
