@@ -45,6 +45,7 @@ import {
   CommandHandler,
   type RuntimeOperations,
 } from "./internal";
+import { ContextManager } from "./environment/ContextManager";
 import { createLogger } from "@agentxjs/common";
 
 const logger = createLogger("runtime/RuntimeImpl");
@@ -63,6 +64,8 @@ export class RuntimeImpl implements Runtime {
   private readonly commandHandler: CommandHandler;
   private readonly defaultAgent?: AgentDefinition;
   private readonly environmentFactory?: EnvironmentFactory;
+  /** KNUTH-FEAT 2026-07-07: 上下文压缩管理器 — token 跟踪 + image 边界 summarization */
+  private readonly contextManager: ContextManager | null;
 
   /** Container registry: containerId -> RuntimeContainer */
   private readonly containerRegistry = new Map<string, RuntimeContainer>();
@@ -86,9 +89,34 @@ export class RuntimeImpl implements Runtime {
       model: this.llmConfig.model,
     });
 
+    // KNUTH-FEAT 2026-07-07: ContextManager 仅在 apiKey 存在时创建
+    // 把 ContextManager 的事件桥接到 SystemBus (一次性捕获 this.bus):
+    //   - context_warning event → 包装成 SystemEvent 发出, UI 层可订阅
+    // 没 apiKey 时 (如 mock 测试) 直接 null, CommandHandler 跳过 summarization
+    if (this.llmConfig.apiKey) {
+      logger.info("Creating ContextManager");
+      this.contextManager = new ContextManager(this.llmConfig, (event) => {
+        this.bus.emit({
+          type: "context_warning",
+          timestamp: event.timestamp,
+          source: "runtime",
+          category: "notification",
+          intent: "notification",
+          data: event,
+        });
+      });
+    } else {
+      logger.warn("Skipping ContextManager creation (no apiKey)");
+      this.contextManager = null;
+    }
+
     // Create CommandHandler to handle command events
     logger.info("Creating CommandHandler");
-    this.commandHandler = new CommandHandler(this.bus, this.createRuntimeOperations());
+    this.commandHandler = new CommandHandler(
+      this.bus,
+      this.createRuntimeOperations(),
+      this.contextManager,
+    );
 
     logger.info("RuntimeImpl constructor done");
   }
@@ -402,6 +430,18 @@ export class RuntimeImpl implements Runtime {
         // Return complete Message objects (not transformed)
         // UI layer expects full Message structure with subtype
         return messages;
+      },
+      // KNUTH-FEAT 2026-07-07: image 边界 summarization — 取 container 内最近一个 image
+      getMostRecentImageInContainer: async (containerId: string) => {
+        const records = await this.persistence.images.findImagesByContainerId(containerId);
+        if (!records || records.length === 0) {
+          return null;
+        }
+        // 按 updatedAt 降序排序, 取最新的
+        const sorted = [...records].sort((a, b) => b.updatedAt - a.updatedAt);
+        const latest = sorted[0];
+        const online = this.isImageOnline(latest.imageId);
+        return this.toImageListItemResult(latest, online);
       },
     };
   }
