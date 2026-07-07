@@ -890,6 +890,10 @@
         "error": "Error"
       }
     },
+    "context": {
+      "warning": "Conversation approaching context limit ({{ratio}}%), consider starting a new conversation",
+      "force": "Conversation is full ({{ratio}}%), must start a new conversation to continue"
+    },
     "sidebar": {
       "expand": "Expand sidebar",
       "collapse": "Collapse sidebar"

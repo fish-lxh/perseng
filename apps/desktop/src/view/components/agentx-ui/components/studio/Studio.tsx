@@ -43,6 +43,7 @@ import { AgentList } from "@/components/agentx-ui/components/container/AgentList
 import { Chat } from "@/components/agentx-ui/components/container/Chat";
 import { WelcomePage } from "@/components/agentx-ui/components/container/WelcomePage";
 import { ToastContainer, useToast } from "@/components/agentx-ui/components/element/Toast";
+import { TokenUsageIndicator } from "@/components/agentx-ui/components/element/TokenUsageIndicator";
 import { useImages } from "@/components/agentx-ui/hooks";
 import { cn } from "@/components/agentx-ui/utils";
 import { WorkspacePanel } from "@/components/agentx-ui/components/workspace/WorkspacePanel";
@@ -230,6 +231,27 @@ export function Studio({
     };
   }, [agentx, showToast]);
 
+  // KNUTH-FEAT 2026-07-07: 监听 context_warning event, 弹 toast 提示用户 context 快满
+  React.useEffect(() => {
+    if (!agentx) return;
+
+    const unsubscribe = agentx.on("context_warning", (event) => {
+      const data = event.data as {
+        type?: "context_warning";
+        ratio?: number;
+        severity?: "warn" | "force";
+      };
+      if (!data || !data.severity) return;
+      const ratioPct = Math.round((data.ratio ?? 0) * 100);
+      const key = data.severity === "force" ? "agentxUI.context.force" : "agentxUI.context.warning";
+      showToast(t(key, { ratio: ratioPct }), data.severity === "force" ? "error" : "warn");
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [agentx, showToast, t]);
+
   const workspacePlugins = React.useMemo<WorkspacePanelPlugin[]>(() => [
     {
       id: "explorer",
@@ -279,8 +301,12 @@ export function Studio({
 
       {/* Main area - WelcomePage or Chat */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Toolbar with workspace toggle */}
-        <div className="flex items-center justify-end px-2 h-8 border-b border-border/50 bg-background shrink-0">
+        {/* Toolbar with token usage indicator + workspace toggle */}
+        <div className="flex items-center justify-between px-2 h-8 border-b border-border/50 bg-background shrink-0">
+          {/* KNUTH-FEAT 2026-07-07: 实时 token 用量显示 (订阅 context_warning) */}
+          <div className="flex items-center pl-1">
+            <TokenUsageIndicator agentx={agentx} imageId={currentImageId} />
+          </div>
           <button
             onClick={() => setWorkspacePanelOpen(v => !v)}
             className={cn(

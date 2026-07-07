@@ -887,6 +887,10 @@
         "error": "错误"
       }
     },
+    "context": {
+      "warning": "对话接近 context 限制（{{ratio}}%），建议开新对话",
+      "force": "对话已满（{{ratio}}%），必须开新对话才能继续"
+    },
     "sidebar": {
       "expand": "展开侧边栏",
       "collapse": "收起侧边栏"
