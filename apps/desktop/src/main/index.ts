@@ -22,10 +22,10 @@ import { scanPersengHome, querySqlite } from '~/main/services/DatabaseManager'
 import * as logger from '@promptx/logger'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
-import { mainI18n } from '~/main/i18n'
-import { ServerConfig } from '~/main/domain/entities/ServerConfig'
-import { ServerConfigManager } from '@promptx/config'
 import { migratePromptXHomeIfNeeded, getPersengHomeDir } from '~/main/utils/persengPaths'
+import { registerServerConfigIpc } from '~/main/ipc/serverConfigIpc'
+import { registerLanguageIpc } from '~/main/ipc/languageIpc'
+import { registerLogsIpc } from '~/main/ipc/logsIpc'
 
 class PersengDesktopApp {
   private trayPresenter: TrayPresenter | null = null
@@ -84,9 +84,9 @@ class PersengDesktopApp {
     this.autoStartWindow = new AutoStartWindow(this.autoStartService)
 
     // === 然后设置其他 IPC ===
-    this.setupServerConfigIPC()
-    this.setupLanguageIPC()
-    this.setupLogsIPC()
+    registerServerConfigIpc({ getConfigPort: () => this.configPort, getServerPort: () => this.serverPort })
+    registerLanguageIpc({ getTrayPresenter: () => this.trayPresenter })
+    registerLogsIpc()
     this.setupDialogIPC()
     this.setupShellIPC()
     this.setupAgentXIPC()
@@ -306,229 +306,6 @@ class PersengDesktopApp {
         }
       }
     }
-  }
-
-  private setupServerConfigIPC(): void {
-    ipcMain.handle('server-config:get', async () => {
-      if (!this.configPort) {
-        return ServerConfig.default().toJSON()
-      }
-      const res = await this.configPort.load()
-      if (res.ok) {
-        return res.value.toJSON()
-      }
-      // 加载失败则返回默认
-      return ServerConfig.default().toJSON()
-    })
-
-    ipcMain.handle('server-config:update', async (_event, payload: { host: string; port: number; debug?: boolean; enableV2?: boolean }) => {
-      const base = ServerConfig.default().toJSON()
-      const created = ServerConfig.create({
-        ...base,
-        host: payload.host,
-        port: payload.port,
-        debug: payload.debug ?? base.debug,
-        enableV2: payload.enableV2 ?? base.enableV2
-      })
-      if (!created.ok) {
-        throw new Error(created.error.message)
-      }
-      const cfg = created.value
-      // 持久化
-      if (this.configPort) {
-        const saveRes = await this.configPort.save(cfg)
-        if (!saveRes.ok) {
-          throw new Error(saveRes.error.message)
-        }
-      }
-      // 同步 enableV2 到 ServerConfigManager（供 MCP server 读取）
-      const scm = new ServerConfigManager()
-      scm.setEnableV2(cfg.enableV2)
-      // 应用配置（重启服务）
-      if (this.serverPort) {
-        const restartRes = await this.serverPort.restart(cfg)
-        if (!restartRes.ok) {
-          throw new Error(restartRes.error.message)
-        }
-      }
-      return cfg.toJSON()
-    })
-
-    ipcMain.handle('server-config:reset', async () => {
-      const cfg = ServerConfig.default()
-      // 重置持久化文件
-      if (this.configPort) {
-        const resetRes = await this.configPort.reset()
-        if (!resetRes.ok) {
-          // 如果 reset 不可用或失败，则直接 save 默认
-          const saveRes = await this.configPort.save(cfg)
-          if (!saveRes.ok) {
-            throw new Error(saveRes.error.message)
-          }
-        }
-      }
-      // 应用默认配置
-      if (this.serverPort) {
-        const restartRes = await this.serverPort.restart(cfg)
-        if (!restartRes.ok) {
-          throw new Error(restartRes.error.message)
-        }
-      }
-      return cfg.toJSON()
-    })
-  }
-
-  private setupLanguageIPC(): void {
-    // 获取当前语言设置
-    ipcMain.handle('settings:getLanguage', async () => {
-      try {
-        const configPath = path.join(app.getPath('userData'), 'language.json')
-        if (fs.existsSync(configPath)) {
-          const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
-          return config.language || 'en'
-        }
-        return 'en' // 默认英文
-      } catch (error) {
-        logger.error('Failed to get language setting:', String(error))
-        return 'en'
-      }
-    })
-
-    // 设置语言
-    ipcMain.handle('settings:setLanguage', async (_event, language: string) => {
-      try {
-        const configPath = path.join(app.getPath('userData'), 'language.json')
-        const config = { language }
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
-        
-        // 更新主进程的i18n语言设置
-        mainI18n.setLocale(language)
-        
-        // 如果托盘已经初始化，重新构建菜单以应用新语言
-        if (this.trayPresenter) {
-          await this.trayPresenter.refreshMenu()
-          logger.info(`Tray menu refreshed with new language: ${language}`)
-        }
-        
-        logger.info(`Language set to: ${language}`)
-        return { success: true }
-      } catch (error) {
-        logger.error('Failed to set language:', String(error))
-        throw new Error('Failed to save language setting')
-      }
-    })
-  }
-
-  private setupLogsIPC(): void {
-    // 用户数据目录已迁移到 ~/.perseng;getPersengHomeDir() 内部优先读新路径,旧路径作为兜底兼容
-    const logsDir = path.join(getPersengHomeDir(), 'logs')
-
-    // 获取日志文件列表
-    ipcMain.handle('logs:list', async () => {
-      try {
-        if (!fs.existsSync(logsDir)) {
-          return { success: true, logs: [] }
-        }
-
-        const files = fs.readdirSync(logsDir)
-        const logs = files
-          .filter(file => file.startsWith('perseng-') && file.endsWith('.log'))
-          .map(file => {
-            const filePath = path.join(logsDir, file)
-            try {
-              const stats = fs.statSync(filePath)
-              const isError = file.includes('error')
-
-              return {
-                name: file,
-                path: filePath,
-                size: stats.size,
-                modified: stats.mtime,
-                type: isError ? 'error' : 'normal'
-              }
-            } catch {
-              // 文件可能在读取期间被删除或锁定，跳过
-              return null
-            }
-          })
-          .filter((log): log is NonNullable<typeof log> => log !== null)
-          .sort((a, b) => b.modified.getTime() - a.modified.getTime())
-
-        return { success: true, logs }
-      } catch (error) {
-        logger.error('Failed to list logs:', String(error))
-        return { success: false, error: String(error) }
-      }
-    })
-
-    // 读取日志文件内容
-    ipcMain.handle('logs:read', async (_event, filename: string) => {
-      try {
-        const filePath = path.join(logsDir, filename)
-
-        if (!fs.existsSync(filePath)) {
-          return { success: false, error: 'Log file not found' }
-        }
-
-        const content = fs.readFileSync(filePath, 'utf-8')
-        return { success: true, content }
-      } catch (error) {
-        logger.error('Failed to read log:', String(error))
-        return { success: false, error: String(error) }
-      }
-    })
-
-    // 删除日志文件
-    ipcMain.handle('logs:delete', async (_event, filename: string) => {
-      try {
-        const filePath = path.join(logsDir, filename)
-
-        if (!fs.existsSync(filePath)) {
-          return { success: false, error: 'Log file not found' }
-        }
-
-        fs.unlinkSync(filePath)
-        logger.info(`Log file deleted: ${filename}`)
-        return { success: true }
-      } catch (error) {
-        logger.error('Failed to delete log:', String(error))
-        return { success: false, error: String(error) }
-      }
-    })
-
-    // 清空所有日志
-    ipcMain.handle('logs:clear', async () => {
-      try {
-        if (!fs.existsSync(logsDir)) {
-          return { success: true, deleted: 0 }
-        }
-
-        const files = fs.readdirSync(logsDir)
-        let deleted = 0
-        let skipped = 0
-
-        for (const file of files) {
-          if (file.startsWith('perseng-') && file.endsWith('.log')) {
-            const filePath = path.join(logsDir, file)
-            try {
-              fs.unlinkSync(filePath)
-              deleted++
-            } catch {
-              // 文件可能被锁定（如当前正在写入的日志），跳过
-              skipped++
-            }
-          }
-        }
-
-        if (deleted > 0 || skipped === 0) {
-          logger.info(`Cleared ${deleted} log files${skipped > 0 ? `, ${skipped} skipped (in use)` : ''}`)
-        }
-        return { success: true, deleted }
-      } catch (error) {
-        logger.error('Failed to clear logs:', String(error))
-        return { success: false, error: String(error) }
-      }
-    })
   }
 
   /**
