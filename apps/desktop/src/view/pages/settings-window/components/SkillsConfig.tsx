@@ -84,15 +84,12 @@ export function SkillsConfig() {
   const handleImportSkill = async () => {
     setImporting(true);
     try {
-      console.log("[SkillsConfig] handleImportSkill start");
       const result = await window.electronAPI?.dialog?.openFile?.({
         filters: [{ name: "ZIP files", extensions: ["zip"] }],
         properties: ["openFile"],
       });
-      console.log("[SkillsConfig] dialog result =", result);
 
       if (result?.canceled || !result?.filePaths?.length) {
-        console.log("[SkillsConfig] dialog canceled or empty");
         return;
       }
 
@@ -100,10 +97,8 @@ export function SkillsConfig() {
       if (!zipPath) {
         return;
       }
-      console.log("[SkillsConfig] calling agentx.importSkill, zipPath =", zipPath);
       const importResult =
         await window.electronAPI?.agentx?.importSkill?.(zipPath);
-      console.log("[SkillsConfig] importResult =", importResult);
 
       if (importResult?.success) {
         toast.success(
