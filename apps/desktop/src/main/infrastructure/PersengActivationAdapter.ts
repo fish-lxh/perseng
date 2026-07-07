@@ -1,7 +1,7 @@
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 /**
  * Activation result returned by a role adapter
@@ -28,8 +28,13 @@ export interface ActivationAdapter {
 export class PersengActivationAdapter implements ActivationAdapter {
   async activate(roleId: string): Promise<ActivationResult> {
     try {
-      // 调用 @promptx/cli 的 action 子命令激活角色(CLI bin 名 promptx,npm 包名不动)
-      const { stdout } = await execAsync(`promptx action ${roleId}`, { windowsHide: true })
+      if (!/^[A-Za-z0-9._-]+$/.test(roleId)) {
+        throw new Error('Invalid role ID')
+      }
+
+      // 直接以参数数组调用 CLI，避免命令拼接带来的注入风险。
+      const command = process.platform === 'win32' ? 'promptx.cmd' : 'promptx'
+      const { stdout } = await execFileAsync(command, ['action', roleId], { windowsHide: true })
 
       // 检查输出判断是否成功
       const success =

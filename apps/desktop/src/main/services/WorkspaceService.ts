@@ -33,7 +33,8 @@ export class WorkspaceService {
 
   async addFolder(folderPath: string, name: string): Promise<WorkspaceFolder> {
     const folders = await this.getFolders()
-    const folder: WorkspaceFolder = { id: randomUUID(), name, path: folderPath, added_at: new Date().toISOString() }
+    const normalizedPath = path.resolve(folderPath)
+    const folder: WorkspaceFolder = { id: randomUUID(), name, path: normalizedPath, added_at: new Date().toISOString() }
     folders.push(folder)
     await this.saveFolders(folders)
     return folder
@@ -45,6 +46,7 @@ export class WorkspaceService {
   }
 
   async listDir(dirPath: string): Promise<DirEntry[]> {
+    await this.assertPathAllowed(dirPath)
     const entries = await fs.readdir(dirPath, { withFileTypes: true })
     const IGNORE = new Set(['node_modules', '.git', '.DS_Store', 'Thumbs.db', 'dist', '.next', '__pycache__'])
     const result: DirEntry[] = []
@@ -69,6 +71,7 @@ export class WorkspaceService {
   }
 
   async readFile(filePath: string): Promise<string> {
+    await this.assertPathAllowed(filePath)
     const MAX = 512 * 1024 // 512KB
     const buf = await fs.readFile(filePath)
     if (buf.length > MAX) return buf.subarray(0, MAX).toString('utf-8') + '\n\n[文件已截断]'
@@ -76,21 +79,47 @@ export class WorkspaceService {
   }
 
   async readFileBase64(filePath: string): Promise<string> {
+    await this.assertPathAllowed(filePath)
     const buf = await fs.readFile(filePath)
     return buf.toString('base64')
   }
 
   async writeFile(filePath: string, content: string): Promise<void> {
+    await this.assertPathAllowed(filePath)
     await fs.mkdir(path.dirname(filePath), { recursive: true })
     await fs.writeFile(filePath, content, 'utf-8')
   }
 
   async createDir(dirPath: string): Promise<void> {
+    await this.assertPathAllowed(dirPath)
     await fs.mkdir(dirPath, { recursive: true })
   }
 
   async deleteItem(itemPath: string): Promise<void> {
+    await this.assertPathAllowed(itemPath, { allowRoot: false })
     await fs.rm(itemPath, { recursive: true, force: true })
+  }
+
+  private async assertPathAllowed(targetPath: string, options?: { allowRoot?: boolean }): Promise<void> {
+    const resolvedTarget = path.resolve(targetPath)
+    const roots = (await this.getFolders()).map(folder => path.resolve(folder.path))
+    if (roots.length === 0) {
+      throw new Error('No workspace folder registered')
+    }
+
+    const matchedRoot = roots.find(root => this.isPathInside(root, resolvedTarget))
+    if (!matchedRoot) {
+      throw new Error('Path is outside registered workspaces')
+    }
+
+    if (options?.allowRoot === false && resolvedTarget === matchedRoot) {
+      throw new Error('Deleting the workspace root is not allowed')
+    }
+  }
+
+  private isPathInside(rootPath: string, targetPath: string): boolean {
+    const relative = path.relative(rootPath, targetPath)
+    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
   }
 
   private async saveFolders(folders: WorkspaceFolder[]): Promise<void> {

@@ -3,7 +3,7 @@ import * as logger from '@promptx/logger'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
-import { app } from 'electron'
+import { app, safeStorage } from 'electron'
 // KNUTH-FIX 2026-07-06: adm-zip 是 CJS 包（"main": "adm-zip.js"），在 ESM 模式下
 // import default 拿到的就是 AdmZip class。之前用 require('adm-zip') 在 "type": "module"
 // 项目里直接 ReferenceError，导致 skill zip 安装"如同虚设"（错误被 catch 吞掉，UI 弹个
@@ -49,6 +49,12 @@ export interface AgentXConfig {
   activeProfileId?: string
 }
 
+type PersistedAgentXProfile = Omit<AgentXProfile, 'apiKey'> & { apiKey: string }
+type PersistedAgentXConfig = Omit<AgentXConfig, 'apiKey' | 'profiles'> & {
+  apiKey: string
+  profiles?: PersistedAgentXProfile[]
+}
+
 const DEFAULT_CONFIG: AgentXConfig = {
   apiKey: '',
   baseUrl: 'https://api.anthropic.com',
@@ -82,7 +88,7 @@ export class AgentXService {
     try {
       if (fs.existsSync(this.configPath)) {
         const data = fs.readFileSync(this.configPath, 'utf-8')
-        const saved = JSON.parse(data)
+        const saved = this.deserializeConfig(JSON.parse(data) as PersistedAgentXConfig)
         this.config = { ...DEFAULT_CONFIG, ...saved }
 
         // Migrate: if no profiles but has apiKey, create a default profile
@@ -106,9 +112,60 @@ export class AgentXService {
 
   private saveConfig(): void {
     try {
-      fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2))
+      const persisted = this.serializeConfig(this.config)
+      fs.writeFileSync(this.configPath, JSON.stringify(persisted, null, 2))
     } catch (error) {
       logger.error('Failed to save AgentX config:', String(error))
+    }
+  }
+
+  private serializeConfig(config: AgentXConfig): PersistedAgentXConfig {
+    return {
+      ...config,
+      apiKey: this.encryptSecret(config.apiKey),
+      profiles: config.profiles?.map(profile => ({
+        ...profile,
+        apiKey: this.encryptSecret(profile.apiKey),
+      })),
+    }
+  }
+
+  private deserializeConfig(config: PersistedAgentXConfig): AgentXConfig {
+    return {
+      ...config,
+      apiKey: this.decryptSecret(config.apiKey),
+      profiles: config.profiles?.map(profile => ({
+        ...profile,
+        apiKey: this.decryptSecret(profile.apiKey),
+      })),
+    }
+  }
+
+  private encryptSecret(value: string): string {
+    if (!value) {
+      return value
+    }
+    if (!safeStorage.isEncryptionAvailable()) {
+      return value
+    }
+    return `enc:${safeStorage.encryptString(value).toString('base64')}`
+  }
+
+  private decryptSecret(value: string): string {
+    if (!value) {
+      return value
+    }
+    if (!value.startsWith('enc:')) {
+      return value
+    }
+    try {
+      if (!safeStorage.isEncryptionAvailable()) {
+        return ''
+      }
+      return safeStorage.decryptString(Buffer.from(value.slice(4), 'base64'))
+    } catch (error) {
+      logger.warn('Failed to decrypt AgentX secret:', String(error))
+      return ''
     }
   }
 
