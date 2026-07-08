@@ -104,9 +104,35 @@ export class AgentXService {
           this.config.activeProfileId = defaultProfile.id
           this.saveConfig()
         }
+
+        // KNUTH-FIX 2026-07-08: loadConfig 也需要把 active profile 同步到顶层
+        // apiKey/baseUrl/model —— 否则多 profile 模式下用户重启后顶层 apiKey 为空,
+        // 触发 start() 误判 "API Key not configured"。updateConfig 已经做了同步,
+        // loadConfig 之前漏了。
+        this.syncActiveProfileToTopLevel()
       }
     } catch (error) {
       logger.error('Failed to load AgentX config:', String(error))
+    }
+  }
+
+  /**
+   * KNUTH-FIX 2026-07-08: 把 active profile 的 apiKey/baseUrl/model 同步到顶层字段。
+   *
+   * 顶层字段（apiKey/baseUrl/model）由 Claude SDK 配置直接消费。多 profile 架构下
+   * 真实值存在 profiles[activeProfileId] 里，必须显式同步。loadConfig 和
+   * updateConfig 都需要在末尾调用一次。
+   */
+  private syncActiveProfileToTopLevel(): void {
+    if (this.config.profiles?.length && this.config.activeProfileId) {
+      const active = this.config.profiles.find(
+        (p) => p.id === this.config.activeProfileId
+      )
+      if (active) {
+        this.config.apiKey = active.apiKey
+        this.config.baseUrl = active.baseUrl
+        this.config.model = active.model
+      }
     }
   }
 
@@ -160,7 +186,18 @@ export class AgentXService {
     }
     try {
       if (!safeStorage.isEncryptionAvailable()) {
-        return ''
+        // KNUTH-FIX 2026-07-08: safeStorage 不可用时不要直接返回 '' (会丢 key)。
+        // 兜底方案: 尝试把 base64 当成 raw utf-8 解码 (兼容历史上非加密存储的 value)。
+        // 解不出来再返回 '' —— 至少不再静默丢数据。
+        logger.warn(
+          'safeStorage unavailable while decrypting AgentX secret; falling back to raw base64'
+        )
+        try {
+          return Buffer.from(value.slice(4), 'base64').toString('utf-8')
+        } catch (fallbackError) {
+          logger.warn('Raw base64 fallback also failed:', String(fallbackError))
+          return ''
+        }
       }
       return safeStorage.decryptString(Buffer.from(value.slice(4), 'base64'))
     } catch (error) {
@@ -177,14 +214,7 @@ export class AgentXService {
     this.config = { ...this.config, ...newConfig }
 
     // Sync active profile's fields to top-level apiKey/baseUrl/model
-    if (this.config.profiles?.length && this.config.activeProfileId) {
-      const active = this.config.profiles.find(p => p.id === this.config.activeProfileId)
-      if (active) {
-        this.config.apiKey = active.apiKey
-        this.config.baseUrl = active.baseUrl
-        this.config.model = active.model
-      }
-    }
+    this.syncActiveProfileToTopLevel()
 
     this.saveConfig()
 
@@ -239,8 +269,10 @@ export class AgentXService {
     }
 
     if (!this.config.apiKey) {
-      logger.warn('AgentX service not started: API Key not configured')
-      return
+      // KNUTH-FIX 2026-07-08: 之前静默 return,导致 IPC 端 agentx:start 返回
+      // { success: true }（虚假成功），用户看到的"未配置"提示无具体错误。
+      // 改为 throw,让 IPC 端把 error message 透传到 UI。
+      throw new Error('API Key not configured. Please set it in Settings → AgentX Profiles.')
     }
 
     try {
