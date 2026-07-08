@@ -481,12 +481,20 @@ module.exports.isProtectedRole = isProtectedRole
  *
  * 默认行为：从真实模块加载。测试可通过 `setRolexBridgeFactory` 注入 mock，
  * 完全避开 vitest 4 CJS mock 在绝对路径上的拦截问题。
+ *
+ * `_bridgeFactory` 状态放在独立 `.cjs` 文件里共享 — vitest 的 SSR ESM transform
+ * 会把 ESM `import` 和 CJS `require` 拆成不同 module instance，导致 dispatcher
+ * (CJS) 与测试 (ESM) 注入的 factory 落到不同 instance。`.cjs` 强制走 Node 的
+ * require cache（按绝对路径索引），无论从哪边 require 都拿到同一份 state。
+ *
+ * P0 step 0B.3: 去掉 .js 扩展名 — 由 vitest/tsx 的 resolver 走 extensionAlias
+ * 解析到 rolex/RolexBridge.ts（生产构建由 tsup 在打包时处理）。
  */
-let _bridgeFactory = null
+const lifecycleState = require('./lifecycleState.cjs')
 
 function _getRolexBridge () {
-  if (_bridgeFactory) return _bridgeFactory()
-  const { getRolexBridge } = require('../../rolex/RolexBridge.js')
+  if (lifecycleState.bridgeFactory) return lifecycleState.bridgeFactory()
+  const { getRolexBridge } = require('../../rolex/RolexBridge')
   return getRolexBridge()
 }
 
@@ -500,11 +508,11 @@ function _getRolexBridge () {
  *   // 测试结束：RoleLifecycle.resetRolexBridgeFactory()
  */
 function setRolexBridgeFactory (factory) {
-  _bridgeFactory = factory
+  lifecycleState.setBridgeFactory(factory)
 }
 
 function resetRolexBridgeFactory () {
-  _bridgeFactory = null
+  lifecycleState.resetBridgeFactory()
 }
 
 module.exports.probeV1Paths = probeV1Paths

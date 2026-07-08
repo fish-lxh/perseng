@@ -14,28 +14,33 @@
  * Mock 策略：
  * - 不调 ensureInitialized，直接给 instance.rolex 注入 mock direct
  * - 用 mkdtempSync 准备 fake ~/.rolex/ 目录（避免 fs 操作打 logger）
+ *
+ * P0 step 0B.3: 迁 .js → .ts (用 ESM import, vitest extensionAlias 把 .js 解析到 .ts)
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { createRequire } from 'module'
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
+import {
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  writeFileSync,
+  existsSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { RolexBridge } from '../RolexBridge.js'
 
-const require = createRequire(import.meta.url)
-const os = require('os')
-
-const { RolexBridge } = require('../RolexBridge')
-
-let homeDir
-let bridge
+let homeDir: string
+let bridge: RolexBridge
 
 beforeEach(() => {
   homeDir = mkdtempSync(path.join(tmpdir(), 'rolex-bridge-'))
-  vi.spyOn(os, 'homedir').mockReturnValue(homeDir)
   bridge = new RolexBridge()
   // 跳过 ensureInitialized，直接注入 mock rolex.direct
   bridge.initialized = true
+  // P0 step 0B.3: ESM 下不能 vi.spyOn(os, 'homedir') (namespace 不可配置)，
+  // 改为构造后直接覆盖 rolexRoot，等价行为。
+  bridge.rolexRoot = path.join(homeDir, '.rolex')
 })
 
 afterEach(() => {
@@ -46,9 +51,9 @@ afterEach(() => {
 })
 
 /** 注入 census.list 的返回值映射 */
-function mockCensus (directMap) {
+function mockCensus(directMap: Record<string, unknown>): void {
   bridge.rolex = {
-    direct: vi.fn(async (cmd, args) => {
+    direct: vi.fn(async (cmd: string, args: unknown) => {
       const key = `${cmd} ${JSON.stringify(args || {})}`.trim()
       if (Object.prototype.hasOwnProperty.call(directMap, key)) {
         return directMap[key]
@@ -58,7 +63,7 @@ function mockCensus (directMap) {
       }
       throw new Error(`unmocked direct call: ${cmd} ${JSON.stringify(args || {})}`)
     }),
-  }
+  } as unknown as NonNullable<typeof bridge.rolex>
 }
 
 // ============================================================
@@ -94,8 +99,8 @@ describe('RolexBridge._parseCensusIds', () => {
   })
 
   it('returns empty for null / undefined / empty string', () => {
-    expect(RolexBridge._parseCensusIds(null)).toEqual([])
-    expect(RolexBridge._parseCensusIds(undefined)).toEqual([])
+    expect(RolexBridge._parseCensusIds(null as unknown as string)).toEqual([])
+    expect(RolexBridge._parseCensusIds(undefined as unknown as string)).toEqual([])
     expect(RolexBridge._parseCensusIds('')).toEqual([])
   })
 
@@ -121,13 +126,16 @@ describe('RolexBridge.listV2Roles', () => {
     })
     // 准备 fake Gherkin 文件，确保 description 能填上（不影响核心断言）
     mkdirSync(path.join(homeDir, '.rolex', 'roles', 'foo', 'identity'), { recursive: true })
-    writeFileSync(path.join(homeDir, '.rolex', 'roles', 'foo', 'identity', 'persona.identity.feature'), 'Feature: foo\n  desc')
+    writeFileSync(
+      path.join(homeDir, '.rolex', 'roles', 'foo', 'identity', 'persona.identity.feature'),
+      'Feature: foo\n  desc',
+    )
 
     const roles = await bridge.listV2Roles()
-    expect(roles.map(r => r.id)).toEqual(['foo', 'bar'])
-    expect(roles.find(r => r.id === 'foo').archived).toBe(false)
+    expect(roles.map((r) => r.id)).toEqual(['foo', 'bar'])
+    expect(roles.find((r) => r.id === 'foo')?.archived).toBe(false)
     // baz 被 past 标记为 retired，过滤掉
-    expect(roles.find(r => r.id === 'baz')).toBeUndefined()
+    expect(roles.find((r) => r.id === 'baz')).toBeUndefined()
   })
 
   it('includeRetired=true returns all roles (no past filtering)', async () => {
@@ -138,7 +146,7 @@ describe('RolexBridge.listV2Roles', () => {
     })
 
     const roles = await bridge.listV2Roles({ includeRetired: true })
-    expect(roles.map(r => r.id)).toEqual(['foo', 'bar', 'baz'])
+    expect(roles.map((r) => r.id)).toEqual(['foo', 'bar', 'baz'])
   })
 
   it('returns empty array when census.list returns "No individual found."', async () => {
@@ -157,29 +165,30 @@ describe('RolexBridge.listV2Roles', () => {
     })
 
     const roles = await bridge.listV2Roles({ includeRetired: true })
-    expect(roles.map(r => r.id)).toEqual(['foo', 'bar'])
+    expect(roles.map((r) => r.id)).toEqual(['foo', 'bar'])
     // past census 不应该被调用
-    const directCalls = bridge.rolex.direct.mock.calls.map(c => c[0])
+    const directCalls = (bridge.rolex as unknown as { direct: { mock: { calls: unknown[][] } } })
+      .direct.mock.calls.map((c) => c[0])
     expect(directCalls).not.toContain('!census.list {"type":"past"}')
   })
 
   it('census.list type=past failure → degrades to no retired filter (returns all)', async () => {
     // individual 返回正常，past 抛错 → _getRetiredIdSet 兜底返回空集合
     bridge.rolex = {
-      direct: vi.fn(async (cmd, args) => {
-        if (cmd === '!census.list' && args && args.type === 'individual') {
+      direct: vi.fn(async (cmd: string, args: unknown) => {
+        if (cmd === '!census.list' && (args as { type?: string })?.type === 'individual') {
           return 'foo\nbar'
         }
-        if (cmd === '!census.list' && args && args.type === 'past') {
+        if (cmd === '!census.list' && (args as { type?: string })?.type === 'past') {
           throw new Error('census past not available')
         }
         throw new Error(`unmocked: ${cmd}`)
       }),
-    }
+    } as unknown as NonNullable<typeof bridge.rolex>
 
     const roles = await bridge.listV2Roles()
     // 兜底不过滤，全部返回
-    expect(roles.map(r => r.id)).toEqual(['foo', 'bar'])
+    expect(roles.map((r) => r.id)).toEqual(['foo', 'bar'])
   })
 
   it('seed roles get source=system, others source=rolex', async () => {
@@ -189,11 +198,11 @@ describe('RolexBridge.listV2Roles', () => {
     })
 
     const roles = await bridge.listV2Roles()
-    const nuwa = roles.find(r => r.id === 'nuwa')
-    const custom = roles.find(r => r.id === 'my-custom-v2-role')
-    expect(nuwa.source).toBe('system')
-    expect(custom.source).toBe('rolex')
-    expect(nuwa.version).toBe('v2')
+    const nuwa = roles.find((r) => r.id === 'nuwa')
+    const custom = roles.find((r) => r.id === 'my-custom-v2-role')
+    expect(nuwa?.source).toBe('system')
+    expect(custom?.source).toBe('rolex')
+    expect(nuwa?.version).toBe('v2')
   })
 
   it('uses V2 placeholder description when no persona.identity.feature', async () => {
@@ -203,7 +212,7 @@ describe('RolexBridge.listV2Roles', () => {
     })
 
     const roles = await bridge.listV2Roles()
-    expect(roles[0].description).toBe('V2 角色 · ghost-role')
+    expect(roles[0]?.description).toBe('V2 角色 · ghost-role')
   })
 
   it('extracts description from persona.identity.feature', async () => {
@@ -219,7 +228,7 @@ describe('RolexBridge.listV2Roles', () => {
     )
 
     const roles = await bridge.listV2Roles()
-    expect(roles[0].description).toBe('This is the extracted description. Continues here.')
+    expect(roles[0]?.description).toBe('This is the extracted description. Continues here.')
   })
 
   it('PERSENG_ENABLE_V2=0 returns empty array', async () => {
@@ -248,12 +257,15 @@ describe('RolexBridge.listRetiredV2', () => {
       '!census.list {"type":"individual"}': 'foo\nbar\nghost',
     })
     mkdirSync(path.join(homeDir, '.rolex', 'roles', 'ghost', 'identity'), { recursive: true })
-    writeFileSync(path.join(homeDir, '.rolex', 'roles', 'ghost', 'identity', 'persona.identity.feature'), 'Feature: Ghost\n  Ghost desc')
+    writeFileSync(
+      path.join(homeDir, '.rolex', 'roles', 'ghost', 'identity', 'persona.identity.feature'),
+      'Feature: Ghost\n  Ghost desc',
+    )
 
     const retired = await bridge.listRetiredV2()
-    expect(retired.map(r => r.id)).toEqual(['ghost', 'retired-user'])
-    expect(retired.every(r => r.archived === true)).toBe(true)
-    expect(retired.every(r => r.version === 'v2')).toBe(true)
+    expect(retired.map((r) => r.id)).toEqual(['ghost', 'retired-user'])
+    expect(retired.every((r) => r.archived === true)).toBe(true)
+    expect(retired.every((r) => r.version === 'v2')).toBe(true)
   })
 
   it('past id not in active list → minimal role object with placeholder desc', async () => {
@@ -271,7 +283,7 @@ describe('RolexBridge.listRetiredV2', () => {
       version: 'v2',
       source: 'rolex',
     })
-    expect(retired[0].description).toBe('V2 角色 · unknown-past-id (已归档)')
+    expect(retired[0]?.description).toBe('V2 角色 · unknown-past-id (已归档)')
   })
 
   it('returns empty when past census is empty', async () => {
@@ -288,7 +300,7 @@ describe('RolexBridge.listRetiredV2', () => {
       direct: vi.fn(async () => {
         throw new Error('census broken')
       }),
-    }
+    } as unknown as NonNullable<typeof bridge.rolex>
 
     const retired = await bridge.listRetiredV2()
     expect(retired).toEqual([])

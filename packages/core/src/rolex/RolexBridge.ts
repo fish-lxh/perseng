@@ -1,31 +1,32 @@
-const path = require('path')
-const fs = require('fs-extra')
-const os = require('os')
-const logger = require('@promptx/logger')
-
 /**
- * 从 Gherkin Feature 文件内容中提取 Feature 名称
+ * RolexBridge - 核心桥接模块
+ *
+ * 单例模式，懒初始化。负责管理 RoleX V2 角色系统的生命周期。
+ * 由于 @promptx/core 是 CommonJS，而 RoleX 是 ESM，
+ * 所有 RoleX 导入必须使用 await import() 动态导入。
  */
-function extractFeatureName (content) {
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim()
-    if (trimmed.startsWith('Feature:')) {
-      return trimmed.replace(/^Feature:\s*/, '').trim()
-    }
-  }
-  return ''
-}
+
+import * as path from 'path'
+import * as fs from 'fs-extra'
+import * as os from 'os'
+import * as logger from '@promptx/logger'
+
+// 动态加载的 ESM 模块 (类型仅用于编译期；运行时通过 await import() 加载)
+import type { Rolex, Platform } from 'rolexjs'
 
 /**
  * 从 Gherkin Feature 文件内容中提取描述（Feature 名称后、第一个 Scenario 前的文本）
  */
-function extractFeatureDescription (content) {
+function extractFeatureDescription(content: string): string {
   const lines = content.split('\n')
   let inFeature = false
-  const descLines = []
+  const descLines: string[] = []
   for (const line of lines) {
     const trimmed = line.trim()
-    if (trimmed.startsWith('Feature:')) { inFeature = true; continue }
+    if (trimmed.startsWith('Feature:')) {
+      inFeature = true
+      continue
+    }
     if (inFeature) {
       if (/^(Scenario|Background|Given|When|Then|And|But|@|\|)/.test(trimmed)) break
       if (trimmed && !trimmed.startsWith('#')) descLines.push(trimmed)
@@ -34,17 +35,44 @@ function extractFeatureDescription (content) {
   return descLines.join(' ').trim()
 }
 
-/**
- * RolexBridge - 核心桥接模块
- *
- * 单例模式，懒初始化。负责管理 RoleX V2 角色系统的生命周期。
- * 由于 @promptx/core 是 CommonJS，而 RoleX 是 ESM，
- * 所有 RoleX 导入必须使用 await import() 动态导入。
- */
-class RolexBridge {
+export interface V2Role {
+  id: string
+  name: string
+  description: string
+  source: 'system' | 'rolex'
+  version: 'v2'
+  protocol: 'role'
+  archived: boolean
+}
+
+interface DirectoryRole {
+  name: string
+  org?: string
+  position?: string
+}
+
+interface DirectoryOrganization {
+  name: string
+  members: Array<{ name: string; position?: string }>
+  positions: unknown[]
+}
+
+export interface DirectoryResult {
+  roles: DirectoryRole[]
+  organizations: DirectoryOrganization[]
+}
+
+export class RolexBridge {
   static SEED_ROLES = ['nuwa', 'luban', 'dayu', 'jiangziya', 'sean']
 
-  constructor () {
+  platform: Platform | null = null
+  rolex: Rolex | null = null
+  initialized = false
+  initializing: Promise<void> | null = null
+  currentRoleName: string | null = null
+  rolexRoot: string
+
+  constructor() {
     this.platform = null
     this.rolex = null
     this.initialized = false
@@ -56,11 +84,11 @@ class RolexBridge {
   /**
    * 懒初始化 - 首次使用时动态导入 RoleX ESM 模块
    */
-  async ensureInitialized () {
+  async ensureInitialized(): Promise<void> {
     if (this.initialized) return
     if (this.initializing) return this.initializing
 
-    this.initializing = this._doInit()
+    this.initializing = this.doInit()
     try {
       await this.initializing
     } finally {
@@ -69,7 +97,7 @@ class RolexBridge {
     }
   }
 
-  async _doInit () {
+  private async doInit(): Promise<void> {
     try {
       logger.info('[RolexBridge] Initializing RoleX...')
       await fs.ensureDir(this.rolexRoot)
@@ -81,18 +109,23 @@ class RolexBridge {
 
       // 版本检测：rolexjs 更新时强制重建 SEED 角色（在创建 platform 之前）
       logger.info('[RolexBridge] Syncing SEED roles...')
-      await this._syncSeedRoles()
+      await this.syncSeedRoles()
 
       // 创建 platform（在 SEED 同步之后，确保读到最新的文件状态）
       // RoleX 1.1.0: localPlatform 是工厂函数，不是构造函数
       logger.info('[RolexBridge] Creating platform...')
-      this.platform = localPlatform({
+      this.platform = (localPlatform as unknown as (config: {
+        dataDir: string
+        bootstrap: string[]
+      }) => Platform)({
         dataDir: this.rolexRoot,
-        bootstrap: ['npm:@rolexjs/genesis']  // 注册 Genesis 原型
+        bootstrap: ['npm:@rolexjs/genesis'], // 注册 Genesis 原型
       })
       logger.info('[RolexBridge] Creating Rolex instance...')
       // RoleX 1.1.0: 使用 Rolex.create() 而不是 new Rolex()
-      this.rolex = await Rolex.create(this.platform)
+      this.rolex = await (Rolex as unknown as {
+        create: (platform: Platform) => Promise<Rolex>
+      }).create(this.platform)
 
       // RoleX 1.1.0: 调用 genesis() 初始化世界（首次运行时创建基础结构）
       logger.info('[RolexBridge] Running genesis...')
@@ -101,20 +134,21 @@ class RolexBridge {
       this.initialized = true
       logger.info('[RolexBridge] RoleX initialized successfully')
     } catch (error) {
+      const err = error as Error
       // 提供更清晰的 SQLite 错误说明
-      if (error && error.message && (error.message.includes('SQLite') || error.message.includes('sqlite'))) {
+      if (err && err.message && (err.message.includes('SQLite') || err.message.includes('sqlite'))) {
         const nodeVer = process.versions.node
         const enhanced = new Error(
           `RoleX V2 需要 Node.js 22+（内置 sqlite）或 Bun 运行时。` +
-          `当前运行时：Node.js ${nodeVer}。` +
-          `如需禁用 V2，设置环境变量 PERSENG_ENABLE_V2=0。`
-        )
-        enhanced.cause = error
+            `当前运行时：Node.js ${nodeVer}。` +
+            `如需禁用 V2，设置环境变量 PERSENG_ENABLE_V2=0。`,
+        ) as Error & { cause?: unknown }
+        enhanced.cause = err
         logger.error('[RolexBridge] RoleX 初始化失败（SQLite 不可用）:', enhanced.message)
         throw enhanced
       }
-      logger.error('[RolexBridge] RoleX initialization failed:', error)
-      throw error
+      logger.error('[RolexBridge] RoleX initialization failed:', err)
+      throw err
     }
   }
 
@@ -122,15 +156,18 @@ class RolexBridge {
    * 同步 SEED 角色版本标记
    * RoleX 1.1.0: 不再自动管理 SEED 角色，只记录版本
    */
-  async _syncSeedRoles () {
+  private async syncSeedRoles(): Promise<void> {
     const versionFile = path.join(this.rolexRoot, '.seed-version')
 
     // 读取 rolexjs 当前版本
     let currentVersion = 'unknown'
     try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const rolexjsDir = path.dirname(require.resolve('rolexjs'))
-      const pkg = await fs.readJson(path.join(rolexjsDir, '..', 'package.json'))
-      currentVersion = pkg.version
+      const pkg = (await fs.readJson(path.join(rolexjsDir, '..', 'package.json'))) as {
+        version?: string
+      }
+      currentVersion = pkg.version || 'unknown'
     } catch {
       currentVersion = Date.now().toString()
     }
@@ -150,21 +187,18 @@ class RolexBridge {
   }
 
   /**
-   * 检查指定角色是否为 V2 角色
-   * 通过检查 ~/.perseng/rolex/roles/<roleId>/identity/persona.identity.feature 是否存在
-   */
-  /**
    * 检查角色是否为 V2 角色
    * RoleX 1.1.0: 查询数据库而不是文件系统
    */
-  async isV2Role (roleId) {
+  async isV2Role(roleId: string): Promise<boolean> {
     if (process.env.PERSENG_ENABLE_V2 === '0') return false
     try {
       await this.ensureInitialized()
+      if (!this.rolex) return false
       // 使用 census.list 查询数据库中是否存在该角色
       const censusResult = await this.rolex.direct('!census.list', { type: 'individual' })
       if (typeof censusResult === 'string' && censusResult) {
-        const lines = censusResult.split('\n').filter(l => l.trim())
+        const lines = censusResult.split('\n').filter((l) => l.trim())
         for (const line of lines) {
           const match = line.match(/^([^\s(#]+)/)
           if (match && match[1] === roleId) {
@@ -174,7 +208,7 @@ class RolexBridge {
       }
       return false
     } catch (error) {
-      logger.warn('[RolexBridge] isV2Role check failed:', error)
+      logger.warn('[RolexBridge] isV2Role check failed:', error as Error)
       return false
     }
   }
@@ -183,9 +217,10 @@ class RolexBridge {
    * 激活 V2 角色 - 返回渲染后的状态文本
    * RoleX 1.1.0: 使用 rolex.activate(roleId) 返回 Role 实例
    */
-  async activate (roleId) {
+  async activate(roleId: string): Promise<string> {
     await this.ensureInitialized()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const role = (await this.rolex.activate(roleId)) as unknown as { project: () => string }
     this.currentRoleName = roleId
     return role.project()
   }
@@ -194,8 +229,9 @@ class RolexBridge {
    * 创建新角色 (born)
    * RoleX 1.1.0: 使用 rolex.direct('!individual.born', ...)
    */
-  async born (name, source) {
+  async born(name: string, source: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!individual.born', { id: name, content: source })
     return `Individual "${name}" born.`
   }
@@ -204,11 +240,12 @@ class RolexBridge {
    * 查看角色身份信息
    * RoleX 1.1.0: 使用 rolex.activate() + role.project()
    */
-  async identity (roleId) {
+  async identity(roleId?: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     const targetId = roleId || this.currentRoleName
     if (!targetId) throw new Error('No role specified')
-    const role = await this.rolex.activate(targetId)
+    const role = (await this.rolex.activate(targetId)) as unknown as { project: () => string }
     return role.project()
   }
 
@@ -216,10 +253,13 @@ class RolexBridge {
    * 创建目标 (want)
    * RoleX 1.1.0: role.want(goal, id)
    */
-  async want (name, source, options = {}) {
+  async want(name: string, source: string, _options: Record<string, unknown> = {}): Promise<unknown> {
     await this.ensureInitialized()
-    const roleId = this._requireActiveRole()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const roleId = this.requireActiveRole()
+    const role = (await this.rolex.activate(roleId)) as unknown as {
+      want: (source: string, name: string) => unknown
+    }
     return role.want(source, name)
   }
 
@@ -227,10 +267,13 @@ class RolexBridge {
    * 制定计划 (plan)
    * RoleX 1.3.0: role.plan(plan, id, after, fallback)
    */
-  async plan (source, id, after, fallback) {
+  async plan(source: string, id: string, after?: string, fallback?: string): Promise<unknown> {
     await this.ensureInitialized()
-    const roleId = this._requireActiveRole()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const roleId = this.requireActiveRole()
+    const role = (await this.rolex.activate(roleId)) as unknown as {
+      plan: (source: string, id: string, after?: string, fallback?: string) => unknown
+    }
     return role.plan(source, id, after, fallback)
   }
 
@@ -238,10 +281,13 @@ class RolexBridge {
    * 创建任务 (todo)
    * RoleX 1.1.0: role.todo(task, id)
    */
-  async todo (name, source, options = {}) {
+  async todo(name: string, source: string, _options: Record<string, unknown> = {}): Promise<unknown> {
     await this.ensureInitialized()
-    const roleId = this._requireActiveRole()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const roleId = this.requireActiveRole()
+    const role = (await this.rolex.activate(roleId)) as unknown as {
+      todo: (source: string, name: string) => unknown
+    }
     return role.todo(source, name)
   }
 
@@ -249,10 +295,13 @@ class RolexBridge {
    * 完成任务 (finish)
    * RoleX 1.1.0: role.finish(task)
    */
-  async finish (name) {
+  async finish(name: string): Promise<unknown> {
     await this.ensureInitialized()
-    const roleId = this._requireActiveRole()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const roleId = this.requireActiveRole()
+    const role = (await this.rolex.activate(roleId)) as unknown as {
+      finish: (name: string) => unknown
+    }
     return role.finish(name)
   }
 
@@ -260,10 +309,13 @@ class RolexBridge {
    * 达成目标/完成计划 (achieve → complete)
    * RoleX 1.1.0: role.complete()
    */
-  async achieve (experience) {
+  async achieve(experience?: string): Promise<unknown> {
     await this.ensureInitialized()
-    const roleId = this._requireActiveRole()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const roleId = this.requireActiveRole()
+    const role = (await this.rolex.activate(roleId)) as unknown as {
+      complete: (arg1?: unknown, arg2?: string) => unknown
+    }
     return role.complete(undefined, experience)
   }
 
@@ -271,10 +323,13 @@ class RolexBridge {
    * 放弃目标/计划 (abandon)
    * RoleX 1.1.0: role.abandon()
    */
-  async abandon (experience) {
+  async abandon(experience?: string): Promise<unknown> {
     await this.ensureInitialized()
-    const roleId = this._requireActiveRole()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const roleId = this.requireActiveRole()
+    const role = (await this.rolex.activate(roleId)) as unknown as {
+      abandon: (arg1?: unknown, arg2?: string) => unknown
+    }
     return role.abandon(undefined, experience)
   }
 
@@ -282,32 +337,45 @@ class RolexBridge {
    * 聚焦查看 (focus)
    * RoleX 1.1.0: role.focus(goal)
    */
-  async focus (name) {
+  async focus(name: string): Promise<unknown> {
     await this.ensureInitialized()
-    const roleId = this._requireActiveRole()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const roleId = this.requireActiveRole()
+    const role = (await this.rolex.activate(roleId)) as unknown as {
+      focus: (name: string) => unknown
+    }
     return role.focus(name)
   }
 
   /**
    * 综合 (synthesize) - 向角色注入知识
    * RoleX 1.1.0: 使用 rolex.direct('!individual.teach', ...)
-   * @param {string} name - 知识名称
-   * @param {string} source - Gherkin 源码
-   * @param {string} type - 类型 (knowledge/experience/voice)
-   * @param {string} [targetRole] - 目标角色，如果不指定则使用当前激活角色
+   * @param name - 知识名称
+   * @param source - Gherkin 源码
+   * @param _type - 类型 (knowledge/experience/voice)
+   * @param targetRole - 目标角色，如果不指定则使用当前激活角色
    */
-  async synthesize (name, source, type, targetRole) {
+  async synthesize(
+    name: string,
+    source: string,
+    _type: string,
+    targetRole?: string,
+  ): Promise<string> {
     await this.ensureInitialized()
-    const role = targetRole || this._requireActiveRole()
-    await this.rolex.direct('!individual.teach', { individual: role, id: name, content: source })
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const role = targetRole || this.requireActiveRole()
+    await this.rolex.direct('!individual.teach', {
+      individual: role,
+      id: name,
+      content: source,
+    })
     return `Knowledge "${name}" synthesized for "${role}".`
   }
 
   /**
    * @deprecated 使用 synthesize() 替代。growup 已重命名为 synthesize 以符合康德认识论语义
    */
-  async growup (name, source, type, targetRole) {
+  async growup(name: string, source: string, type: string, targetRole?: string): Promise<string> {
     return this.synthesize(name, source, type, targetRole)
   }
 
@@ -315,8 +383,9 @@ class RolexBridge {
    * 创建组织 (found)
    * RoleX 1.1.0: rolex.direct('!org.found', ...)
    */
-  async found (name, source, parent) {
+  async found(name: string, source: string, _parent?: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!org.found', { id: name, content: source })
     return `Organization "${name}" founded.`
   }
@@ -325,18 +394,20 @@ class RolexBridge {
    * 创建职位 (establish)
    * RoleX 1.1.0: rolex.direct('!position.establish', ...)
    */
-  async establish (positionName, source, orgName) {
+  async establish(positionName: string, source: string, _orgName?: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!position.establish', { id: positionName, content: source })
-    return `Position "${positionName}" established in "${orgName}".`
+    return `Position "${positionName}" established in "${_orgName ?? ''}".`
   }
 
   /**
    * 雇佣角色到组织 (hire)
    * RoleX 1.1.0: rolex.direct('!org.hire', ...)
    */
-  async hire (roleName, orgName) {
+  async hire(roleName: string, orgName: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!org.hire', { org: orgName, individual: roleName })
     return `Role "${roleName}" hired into "${orgName}".`
   }
@@ -345,8 +416,9 @@ class RolexBridge {
    * 解雇角色 (fire)
    * RoleX 1.1.0: rolex.direct('!org.fire', ...)
    */
-  async fire (roleName, orgName) {
+  async fire(roleName: string, orgName: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!org.fire', { org: orgName, individual: roleName })
     return `Role "${roleName}" fired from "${orgName}".`
   }
@@ -355,9 +427,13 @@ class RolexBridge {
    * 任命角色到职位 (appoint)
    * RoleX 1.1.0: rolex.direct('!position.appoint', ...)
    */
-  async appoint (roleName, positionName, orgName) {
+  async appoint(roleName: string, positionName: string, _orgName?: string): Promise<string> {
     await this.ensureInitialized()
-    await this.rolex.direct('!position.appoint', { position: positionName, individual: roleName })
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    await this.rolex.direct('!position.appoint', {
+      position: positionName,
+      individual: roleName,
+    })
     return `Role "${roleName}" appointed to "${positionName}".`
   }
 
@@ -365,8 +441,9 @@ class RolexBridge {
    * 免职 (dismiss)
    * RoleX 1.1.0: rolex.direct('!position.dismiss', ...)
    */
-  async dismiss (roleName, orgName) {
+  async dismiss(roleName: string, orgName: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!position.dismiss', { position: orgName, individual: roleName })
     return `Role "${roleName}" dismissed.`
   }
@@ -376,31 +453,36 @@ class RolexBridge {
    * RoleX 1.1.0: 使用 census.list 返回所有实体列表（字符串格式）
    * 返回结构化的 JSON 数据
    */
-  async directory () {
+  async directory(): Promise<DirectoryResult> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     const textOutput = await this.rolex.direct('!census.list')
 
     // 解析文本输出为结构化数据
-    return this._parseCensusOutput(textOutput)
+    return this.parseCensusOutput(textOutput)
   }
 
   /**
    * 解析 census.list 的文本输出
-   * @private
    */
-  _parseCensusOutput (text) {
-    const result = {
+  private parseCensusOutput(text: unknown): DirectoryResult {
+    const result: DirectoryResult = {
       roles: [],
-      organizations: []
+      organizations: [],
     }
 
     if (!text || typeof text !== 'string') {
       return result
     }
 
-    const lines = text.split('\n').filter(l => l.trim() && !l.includes('---') && !l.includes('📅') && !l.includes('📊') && !l.includes('Powered by'))
+    const lines = text
+      .split('\n')
+      .filter(
+        (l) =>
+          l.trim() && !l.includes('---') && !l.includes('📅') && !l.includes('📊') && !l.includes('Powered by'),
+      )
 
-    let currentOrg = null
+    let currentOrg: string | null = null
 
     for (const line of lines) {
       const trimmed = line.trim()
@@ -417,40 +499,40 @@ class RolexBridge {
         }
         // 这是一个组织名称
         currentOrg = trimmed
-        if (!result.organizations.find(o => o.name === currentOrg)) {
+        if (!result.organizations.find((o) => o.name === currentOrg)) {
           result.organizations.push({
             name: currentOrg,
             members: [],
-            positions: []
+            positions: [],
           })
         }
       }
       // 检测缩进行（角色/个体成员）
       else if (line.startsWith('  ') && currentOrg) {
         const match = trimmed.match(/^([^\s—]+)(?:\s*\([^)]+\))?\s*—\s*(.+)$/)
-        if (match) {
+        if (match && match[1] && match[2]) {
           const name = match[1].trim()
           const description = match[2].trim()
 
           // census.list 缩进行全部是个体（成员），不是职位定义
           // description 是该成员所任职的职位列表（逗号分隔）
-          const positions = description.split(',').map(p => p.trim())
+          const positions = description.split(',').map((p) => p.trim())
 
           // 添加到 roles 列表（unaffiliated 的角色 org 为空）
           const isUnaffiliated = currentOrg === '__unaffiliated__'
           result.roles.push({
             name: name,
             org: isUnaffiliated ? undefined : currentOrg,
-            position: positions[0]
+            position: positions[0],
           })
 
           // 添加到组织的成员列表（unaffiliated 不添加）
           if (!isUnaffiliated) {
-            const org = result.organizations.find(o => o.name === currentOrg)
+            const org = result.organizations.find((o) => o.name === currentOrg)
             if (org) {
               org.members.push({
                 name: name,
-                position: positions[0]
+                position: positions[0],
               })
             }
           }
@@ -465,10 +547,13 @@ class RolexBridge {
    * 反思经历 (reflect)
    * RoleX 1.1.0: role.reflect(encounters, experience)
    */
-  async reflect (encounters, experience, id) {
+  async reflect(encounters: unknown, experience: string, id?: string): Promise<unknown> {
     await this.ensureInitialized()
-    const roleId = this._requireActiveRole()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const roleId = this.requireActiveRole()
+    const role = (await this.rolex.activate(roleId)) as unknown as {
+      reflect: (encounters: unknown, experience: string, id?: string) => unknown
+    }
     return role.reflect(encounters, experience, id)
   }
 
@@ -476,10 +561,13 @@ class RolexBridge {
    * 掌握原则 (realize)
    * RoleX 1.1.0: role.realize(experiences, principle)
    */
-  async realize (experiences, principle, id) {
+  async realize(experiences: unknown, principle: string, id?: string): Promise<unknown> {
     await this.ensureInitialized()
-    const roleId = this._requireActiveRole()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const roleId = this.requireActiveRole()
+    const role = (await this.rolex.activate(roleId)) as unknown as {
+      realize: (experiences: unknown, principle: string, id?: string) => unknown
+    }
     return role.realize(experiences, principle, id)
   }
 
@@ -487,10 +575,13 @@ class RolexBridge {
    * 掌握程序/技能 (master)
    * RoleX 1.1.0: role.master(procedure, id, experiences)
    */
-  async master (procedure, id, experiences) {
+  async master(procedure: string, id: string, experiences?: unknown): Promise<unknown> {
     await this.ensureInitialized()
-    const roleId = this._requireActiveRole()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const roleId = this.requireActiveRole()
+    const role = (await this.rolex.activate(roleId)) as unknown as {
+      master: (procedure: string, id: string, experiences?: unknown) => unknown
+    }
     return role.master(procedure, id, experiences)
   }
 
@@ -498,10 +589,13 @@ class RolexBridge {
    * 遗忘知识 (forget)
    * RoleX 1.1.0: role.forget(nodeId)
    */
-  async forget (nodeId) {
+  async forget(nodeId: string): Promise<unknown> {
     await this.ensureInitialized()
-    const roleId = this._requireActiveRole()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const roleId = this.requireActiveRole()
+    const role = (await this.rolex.activate(roleId)) as unknown as {
+      forget: (nodeId: string) => unknown
+    }
     return role.forget(nodeId)
   }
 
@@ -509,10 +603,13 @@ class RolexBridge {
    * 加载技能 (skill)
    * RoleX 1.1.0: role.skill(locator)
    */
-  async skill (locator) {
+  async skill(locator: string): Promise<unknown> {
     await this.ensureInitialized()
-    const roleId = this._requireActiveRole()
-    const role = await this.rolex.activate(roleId)
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    const roleId = this.requireActiveRole()
+    const role = (await this.rolex.activate(roleId)) as unknown as {
+      skill: (locator: string) => unknown
+    }
     return role.skill(locator)
   }
 
@@ -520,8 +617,9 @@ class RolexBridge {
    * 退休个体 (retire)
    * RoleX 1.1.0: rolex.direct('!individual.retire', ...)
    */
-  async retire (individualId) {
+  async retire(individualId: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!individual.retire', { individual: individualId })
     return `Individual "${individualId}" retired.`
   }
@@ -530,8 +628,9 @@ class RolexBridge {
    * 删除个体 (die)
    * RoleX 1.1.0: rolex.direct('!individual.die', ...)
    */
-  async die (individualId) {
+  async die(individualId: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!individual.die', { individual: individualId })
     return `Individual "${individualId}" deleted.`
   }
@@ -540,8 +639,9 @@ class RolexBridge {
    * 恢复个体 (rehire)
    * RoleX 1.1.0: rolex.direct('!individual.rehire', ...)
    */
-  async rehire (individualId) {
+  async rehire(individualId: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!individual.rehire', { individual: individualId })
     return `Individual "${individualId}" rehired.`
   }
@@ -550,9 +650,14 @@ class RolexBridge {
    * 注入技能 (train)
    * RoleX 1.1.0: rolex.direct('!individual.train', ...)
    */
-  async train (individualId, skillId, content) {
+  async train(individualId: string, skillId: string, content: string): Promise<string> {
     await this.ensureInitialized()
-    await this.rolex.direct('!individual.train', { individual: individualId, id: skillId, content })
+    if (!this.rolex) throw new Error('RoleX not initialized')
+    await this.rolex.direct('!individual.train', {
+      individual: individualId,
+      id: skillId,
+      content,
+    })
     return `Skill "${skillId}" trained for "${individualId}".`
   }
 
@@ -560,8 +665,9 @@ class RolexBridge {
    * 定义组织章程 (charter)
    * RoleX 1.1.0: rolex.direct('!org.charter', ...)
    */
-  async charter (orgName, content) {
+  async charter(orgName: string, content: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!org.charter', { org: orgName, content })
     return `Charter defined for organization "${orgName}".`
   }
@@ -570,8 +676,9 @@ class RolexBridge {
    * 解散组织 (dissolve)
    * RoleX 1.1.0: rolex.direct('!org.dissolve', ...)
    */
-  async dissolve (orgName) {
+  async dissolve(orgName: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!org.dissolve', { org: orgName })
     return `Organization "${orgName}" dissolved.`
   }
@@ -580,8 +687,9 @@ class RolexBridge {
    * 赋予职位职责 (charge)
    * RoleX 1.1.0: rolex.direct('!position.charge', ...)
    */
-  async charge (positionName, content) {
+  async charge(positionName: string, content: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!position.charge', { position: positionName, content })
     return `Responsibilities charged to position "${positionName}".`
   }
@@ -590,8 +698,9 @@ class RolexBridge {
    * 声明职位技能要求 (require)
    * RoleX 1.1.0: rolex.direct('!position.require', ...)
    */
-  async require (positionName, skillId) {
+  async require(positionName: string, skillId: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!position.require', { position: positionName, skill: skillId })
     return `Skill "${skillId}" required for position "${positionName}".`
   }
@@ -600,8 +709,9 @@ class RolexBridge {
    * 废除职位 (abolish)
    * RoleX 1.1.0: rolex.direct('!position.abolish', ...)
    */
-  async abolish (positionName) {
+  async abolish(positionName: string): Promise<string> {
     await this.ensureInitialized()
+    if (!this.rolex) throw new Error('RoleX not initialized')
     await this.rolex.direct('!position.abolish', { position: positionName })
     return `Position "${positionName}" abolished.`
   }
@@ -613,20 +723,20 @@ class RolexBridge {
    *   `<id>(alias1, alias2) #tag` 或仅 `<id>`
    * 空结果返回 "No <type> found." 或 "Society is empty."
    *
-   * @param {string} text
-   * @returns {string[]} role IDs (trimmed, non-empty)
+   * @param text
+   * @returns role IDs (trimmed, non-empty)
    */
-  static _parseCensusIds (text) {
+  static _parseCensusIds(text: string): string[] {
     if (typeof text !== 'string' || !text) return []
     // 空态哨兵："No <type> found." / "Society is empty."
     if (/^No .* found\./i.test(text) || /^Society is empty\./i.test(text)) return []
-    const ids = []
+    const ids: string[] = []
     for (const line of text.split('\n')) {
       const trimmed = line.trim()
       if (!trimmed) continue
       // 取第一个空白/paren/hash 之前的 token
       const match = trimmed.match(/^([^\s(#]+)/)
-      if (match) {
+      if (match && match[1]) {
         const id = match[1].trim()
         if (id) ids.push(id)
       }
@@ -637,30 +747,31 @@ class RolexBridge {
   /**
    * 列出所有 V2 角色（供 discover 使用）
    *
-   * @param {Object} [options]
-   * @param {boolean} [options.includeRetired=false] - 是否包含已退休（archived）的个体
+   * @param options
+   * @param options.includeRetired - 是否包含已退休（archived）的个体
    *
    * KNUTH-FEAT 2026-07-04: 默认过滤掉 retired 个体；includeRetired=true 时返回全部。
    * KNUTH-HARDENING 2026-07-05: rolexjs 1.6.3 已通过 `census.list { type: 'past' }`
    * 暴露 retired/dissolved/abolished 实体清单，用 listRetiredV2() 减去实现精准过滤。
    */
-  async listV2Roles ({ includeRetired = false } = {}) {
+  async listV2Roles({ includeRetired = false }: { includeRetired?: boolean } = {}): Promise<V2Role[]> {
     if (process.env.PERSENG_ENABLE_V2 === '0') return []
     try {
       await this.ensureInitialized()
+      if (!this.rolex) return []
 
-      const roles = []
+      const roles: V2Role[] = []
 
       try {
         const censusResult = await this.rolex.direct('!census.list', { type: 'individual' })
-        logger.info('[RolexBridge] Census individual result:', censusResult)
+        logger.info('[RolexBridge] Census individual result:', String(censusResult))
 
-        const ids = RolexBridge._parseCensusIds(censusResult)
+        const ids = RolexBridge._parseCensusIds(censusResult as string)
 
         // KNUTH-HARDENING 2026-07-05: 拉取 past 集合做退役过滤
-        let retiredIds = new Set()
+        let retiredIds = new Set<string>()
         if (!includeRetired && ids.length > 0) {
-          retiredIds = await this._getRetiredIdSet()
+          retiredIds = await this.getRetiredIdSet()
         }
 
         for (const id of ids) {
@@ -669,7 +780,13 @@ class RolexBridge {
           // KNUTH-FIX 2026-07-04: 之前 description 硬编码 ''，UI 显示"暂无描述"。
           // 现在优先从 Gherkin Feature 文件 scrape（Persona.identity.feature），
           // 如果文件不存在则用占位文字 "V2 角色 · {id}"（不再空白）。
-          const featurePath = path.join(this.rolexRoot, 'roles', id, 'identity', 'persona.identity.feature')
+          const featurePath = path.join(
+            this.rolexRoot,
+            'roles',
+            id,
+            'identity',
+            'persona.identity.feature',
+          )
           let description = ''
           try {
             if (await fs.pathExists(featurePath)) {
@@ -692,13 +809,15 @@ class RolexBridge {
           })
         }
       } catch (censusError) {
-        logger.warn('[RolexBridge] Census query failed:', censusError)
+        logger.warn('[RolexBridge] Census query failed:', censusError as Error)
       }
 
-      logger.info(`[RolexBridge] Found ${roles.length} V2 roles from database (includeRetired=${includeRetired})`)
+      logger.info(
+        `[RolexBridge] Found ${roles.length} V2 roles from database (includeRetired=${includeRetired})`,
+      )
       return roles
     } catch (error) {
-      logger.error('[RolexBridge] Failed to list V2 roles:', error)
+      logger.error('[RolexBridge] Failed to list V2 roles:', error as Error)
       return []
     }
   }
@@ -716,24 +835,25 @@ class RolexBridge {
    * 失败兜底：census 查询失败或解析异常时返回 []，DiscoverCommand 默认
    * 仍能跑（只是看不到 archived V2 角色）。
    */
-  async listRetiredV2 () {
+  async listRetiredV2(): Promise<V2Role[]> {
     if (process.env.PERSENG_ENABLE_V2 === '0') return []
     try {
       await this.ensureInitialized()
+      if (!this.rolex) return []
 
       const censusResult = await this.rolex.direct('!census.list', { type: 'past' })
-      logger.info('[RolexBridge] Census past result:', censusResult)
+      logger.info('[RolexBridge] Census past result:', String(censusResult))
 
-      const ids = RolexBridge._parseCensusIds(censusResult)
+      const ids = RolexBridge._parseCensusIds(censusResult as string)
       if (ids.length === 0) return []
 
       // census.list type=past 返回的是 past 节点 id（与 individual id 一致，
       // 来自 rt.transform rehire 的 alias）。但目前不能保证全是 individual，
       // 所以保守只对 known individual 子集做转换。
       const activeRoles = await this.listV2Roles({ includeRetired: true })
-      const activeById = new Map(activeRoles.map(r => [r.id, r]))
+      const activeById = new Map(activeRoles.map((r) => [r.id, r]))
 
-      const retired = []
+      const retired: V2Role[] = []
       for (const id of ids) {
         const active = activeById.get(id)
         if (active) {
@@ -754,7 +874,7 @@ class RolexBridge {
       logger.info(`[RolexBridge] Found ${retired.length} retired V2 roles`)
       return retired
     } catch (error) {
-      logger.warn('[RolexBridge] listRetiredV2 failed:', error)
+      logger.warn('[RolexBridge] listRetiredV2 failed:', error as Error)
       return []
     }
   }
@@ -765,17 +885,18 @@ class RolexBridge {
    * KNUTH-HARDENING 2026-07-05: listV2Roles 做精准退役过滤时复用。
    * census.list type=past 解析失败时返回空集（保守不过滤）。
    */
-  async _getRetiredIdSet () {
+  private async getRetiredIdSet(): Promise<Set<string>> {
     try {
+      if (!this.rolex) return new Set()
       const censusResult = await this.rolex.direct('!census.list', { type: 'past' })
-      return new Set(RolexBridge._parseCensusIds(censusResult))
+      return new Set(RolexBridge._parseCensusIds(censusResult as string))
     } catch (error) {
-      logger.warn('[RolexBridge] _getRetiredIdSet failed (will not filter retired):', error)
+      logger.warn('[RolexBridge] _getRetiredIdSet failed (will not filter retired):', error as Error)
       return new Set()
     }
   }
 
-  _requireActiveRole () {
+  private requireActiveRole(): string {
     if (!this.currentRoleName) {
       throw new Error('No active V2 role. Activate a role first.')
     }
@@ -784,13 +905,11 @@ class RolexBridge {
 }
 
 // 单例
-let instance = null
+let instance: RolexBridge | null = null
 
-function getRolexBridge () {
+export function getRolexBridge(): RolexBridge {
   if (!instance) {
     instance = new RolexBridge()
   }
   return instance
 }
-
-module.exports = { RolexBridge, getRolexBridge }

@@ -1,309 +1,407 @@
-const { getRolexBridge } = require('./RolexBridge')
-const RoleLifecycle = require('../resource/lifecycle/RoleLifecycle')
-const logger = require('@promptx/logger')
-
 /**
  * RolexActionDispatcher - 操作路由
  *
  * 将 MCP action 工具的 operation 参数映射到 RolexBridge 的对应方法。
  * 负责参数校验和错误处理。
  */
-class RolexActionDispatcher {
-  constructor () {
+
+import * as logger from '@promptx/logger'
+import { getRolexBridge, RolexBridge } from './RolexBridge'
+
+// RoleLifecycle 仍在 ../resource/lifecycle/RoleLifecycle.js (Phase 4 范围)，
+// 用 const+require 避免 consumers rootDir TS6059。
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const RoleLifecycle = require('../resource/lifecycle/RoleLifecycle') as unknown as {
+  archiveBatch(
+    roleIds: string[],
+  ): Promise<Array<{ ok: boolean; version?: string; id?: string; error?: string }>>
+  unarchiveBatch(
+    roleIds: string[],
+  ): Promise<Array<{ ok: boolean; version?: string; id?: string; error?: string }>>
+  deleteBatch(
+    roleIds: string[],
+    options: { force: boolean },
+  ): Promise<
+    Array<{
+      ok: boolean
+      version?: string
+      id?: string
+      error?: string
+      protected?: boolean
+    }>
+  >
+}
+
+export type DispatchOperation =
+  | 'activate'
+  | 'born'
+  | 'identity'
+  | 'want'
+  | 'plan'
+  | 'todo'
+  | 'finish'
+  | 'achieve'
+  | 'abandon'
+  | 'focus'
+  | 'synthesize'
+  | 'growup'
+  | 'found'
+  | 'establish'
+  | 'hire'
+  | 'fire'
+  | 'appoint'
+  | 'dismiss'
+  | 'directory'
+  | 'reflect'
+  | 'realize'
+  | 'master'
+  | 'forget'
+  | 'skill'
+  | 'retire'
+  | 'die'
+  | 'rehire'
+  | 'train'
+  | 'charter'
+  | 'dissolve'
+  | 'charge'
+  | 'require'
+  | 'abolish'
+  | 'archive'
+  | 'unarchive'
+  | 'delete'
+
+export interface DispatchArgs {
+  role?: string
+  name?: string
+  source?: string
+  roleIds?: string[]
+  archiveV1?: string[]
+  type?: string
+  parent?: string
+  org?: string
+  position?: string
+  encounters?: unknown
+  experience?: string
+  id?: string
+  experiences?: unknown
+  principle?: string
+  procedure?: string
+  nodeId?: string
+  locator?: string
+  individual?: string
+  skillId?: string
+  content?: string
+  skill?: string
+  after?: string
+  fallback?: string
+  testable?: boolean
+  force?: boolean
+}
+
+export interface DispatchResult {
+  operation: string
+  total?: number
+  failed?: number
+  protected?: number
+  force?: boolean
+  results?: Array<{ ok: boolean; version?: string; id?: string; error?: string; protected?: boolean }>
+  archiveV1Results?: Array<{ ok: boolean; version?: string; id?: string; error?: string }>
+  [key: string]: unknown
+}
+
+export class RolexActionDispatcher {
+  private bridge: RolexBridge
+
+  constructor() {
     this.bridge = getRolexBridge()
   }
 
   /**
    * 分发操作到对应的 RolexBridge 方法
-   * @param {string} operation - 操作类型
-   * @param {object} args - 操作参数
-   * @returns {Promise<object>} 操作结果
+   * @param operation - 操作类型
+   * @param args - 操作参数
+   * @returns 操作结果
    */
-  async dispatch (operation, args = {}) {
+  async dispatch(operation: DispatchOperation, args: DispatchArgs = {}): Promise<unknown> {
     logger.info(`[RolexActionDispatcher] Dispatching: ${operation}`)
 
     switch (operation) {
       case 'activate':
-        return this._activate(args)
+        return this.activateOp(args)
       case 'born':
-        return this._born(args)
+        return this.bornOp(args)
       case 'identity':
-        return this._identity(args)
+        return this.identityOp(args)
       case 'want':
-        return this._want(args)
+        return this.wantOp(args)
       case 'plan':
-        return this._plan(args)
+        return this.planOp(args)
       case 'todo':
-        return this._todo(args)
+        return this.todoOp(args)
       case 'finish':
-        return this._finish(args)
+        return this.finishOp(args)
       case 'achieve':
-        return this._achieve(args)
+        return this.achieveOp(args)
       case 'abandon':
-        return this._abandon(args)
+        return this.abandonOp(args)
       case 'focus':
-        return this._focus(args)
+        return this.focusOp(args)
       case 'synthesize':
-        return this._synthesize(args)
+        return this.synthesizeOp(args)
       case 'growup':
         // 向后兼容：growup 已重命名为 synthesize
-        return this._synthesize(args)
+        return this.synthesizeOp(args)
       case 'found':
-        return this._found(args)
+        return this.foundOp(args)
       case 'establish':
-        return this._establish(args)
+        return this.establishOp(args)
       case 'hire':
-        return this._hire(args)
+        return this.hireOp(args)
       case 'fire':
-        return this._fire(args)
+        return this.fireOp(args)
       case 'appoint':
-        return this._appoint(args)
+        return this.appointOp(args)
       case 'dismiss':
-        return this._dismiss(args)
+        return this.dismissOp(args)
       case 'directory':
-        return this._directory(args)
+        return this.directoryOp(args)
       // 新增：学习循环操作
       case 'reflect':
-        return this._reflect(args)
+        return this.reflectOp(args)
       case 'realize':
-        return this._realize(args)
+        return this.realizeOp(args)
       case 'master':
-        return this._master(args)
+        return this.masterOp(args)
       case 'forget':
-        return this._forget(args)
+        return this.forgetOp(args)
       case 'skill':
-        return this._skill(args)
+        return this.skillOp(args)
       // 新增：个体生命周期
       case 'retire':
-        return this._retire(args)
+        return this.retireOp(args)
       case 'die':
-        return this._die(args)
+        return this.dieOp(args)
       case 'rehire':
-        return this._rehire(args)
+        return this.rehireOp(args)
       case 'train':
-        return this._train(args)
+        return this.trainOp(args)
       // 新增：组织管理
       case 'charter':
-        return this._charter(args)
+        return this.charterOp(args)
       case 'dissolve':
-        return this._dissolve(args)
+        return this.dissolveOp(args)
       // 新增：职位管理
       case 'charge':
-        return this._charge(args)
+        return this.chargeOp(args)
       case 'require':
-        return this._require(args)
+        return this.requireOp(args)
       case 'abolish':
-        return this._abolish(args)
+        return this.abolishOp(args)
       // KNUTH-FEAT 2026-07-04: 跨 V1/V2 归档/恢复（统一接口）
       case 'archive':
-        return this._archive(args)
+        return this.archiveOp(args)
       case 'unarchive':
-        return this._unarchive(args)
+        return this.unarchiveOp(args)
       // KNUTH-HARDENING 2026-07-05: 物理删除（不可恢复）— 受系统角色护栏保护
       case 'delete':
-        return this._delete(args)
+        return this.deleteOp(args)
       default:
-        throw new Error(`Unknown RoleX operation: ${operation}`)
+        throw new Error(`Unknown RoleX operation: ${operation as string}`)
     }
   }
 
-  async _activate (args) {
+  private async activateOp(args: DispatchArgs): Promise<string> {
     if (!args.role) throw new Error('role is required for activate operation')
     return this.bridge.activate(args.role)
   }
 
-  async _born (args) {
+  private async bornOp(args: DispatchArgs): Promise<unknown> {
     if (!args.name) throw new Error('name is required for born operation')
-    const bornResult = await this.bridge.born(args.name, args.source)
+    const bornResult = await this.bridge.born(args.name, args.source ?? '')
 
     // KNUTH-FEAT 2026-07-04: 迁移完成原子化 —— born 成功后自动归档对应的 V1 角色。
     // 单条归档失败不影响 born 结果（V2 已创建，V1 归档是可恢复的标记）。
     if (Array.isArray(args.archiveV1) && args.archiveV1.length > 0) {
       const archiveResults = await RoleLifecycle.archiveBatch(args.archiveV1)
-      const failed = archiveResults.filter(r => !r.ok)
+      const failed = archiveResults.filter((r) => !r.ok)
       if (failed.length > 0) {
         logger.warn(
           `[RolexActionDispatcher] born "${args.name}" succeeded but ${failed.length}/${archiveResults.length} V1 archive failed:`,
-          failed,
+          failed as unknown as Error,
         )
       } else {
         logger.info(
           `[RolexActionDispatcher] born "${args.name}" → auto-archived ${archiveResults.length} V1 role(s): ${args.archiveV1.join(', ')}`,
         )
       }
-      return { ...bornResult, archiveV1Results: archiveResults }
+      return { ...(bornResult as unknown as Record<string, unknown>), archiveV1Results: archiveResults }
     }
 
     return bornResult
   }
 
-  async _identity (args) {
+  private async identityOp(args: DispatchArgs): Promise<string> {
     return this.bridge.identity(args.role)
   }
 
-  async _want (args) {
+  private async wantOp(args: DispatchArgs): Promise<unknown> {
     if (!args.name) throw new Error('name is required for want operation')
-    return this.bridge.want(args.name, args.source, {
-      testable: args.testable
+    return this.bridge.want(args.name, args.source ?? '', {
+      testable: args.testable,
     })
   }
 
-  async _plan (args) {
-    return this.bridge.plan(args.source, args.id, args.after, args.fallback)
+  private async planOp(args: DispatchArgs): Promise<unknown> {
+    return this.bridge.plan(args.source ?? '', args.id ?? '', args.after, args.fallback)
   }
 
-  async _todo (args) {
+  private async todoOp(args: DispatchArgs): Promise<unknown> {
     if (!args.name) throw new Error('name is required for todo operation')
-    return this.bridge.todo(args.name, args.source, {
-      testable: args.testable
+    return this.bridge.todo(args.name, args.source ?? '', {
+      testable: args.testable,
     })
   }
 
-  async _finish (args) {
-    return this.bridge.finish(args.name)
+  private async finishOp(args: DispatchArgs): Promise<unknown> {
+    return this.bridge.finish(args.name ?? '')
   }
 
-  async _achieve (args) {
+  private async achieveOp(args: DispatchArgs): Promise<unknown> {
     return this.bridge.achieve(args.experience)
   }
 
-  async _abandon (args) {
+  private async abandonOp(args: DispatchArgs): Promise<unknown> {
     return this.bridge.abandon(args.experience)
   }
 
-  async _focus (args) {
-    return this.bridge.focus(args.name)
+  private async focusOp(args: DispatchArgs): Promise<unknown> {
+    return this.bridge.focus(args.name ?? '')
   }
 
-  async _synthesize (args) {
+  private async synthesizeOp(args: DispatchArgs): Promise<string> {
     if (!args.name) throw new Error('name is required for synthesize operation')
-    return this.bridge.synthesize(args.name, args.source, args.type, args.role)
+    return this.bridge.synthesize(args.name, args.source ?? '', args.type ?? 'knowledge', args.role)
   }
 
-  // 向后兼容：保留 _growup 方法
-  async _growup (args) {
-    return this._synthesize(args)
-  }
-
-  async _found (args) {
+  private async foundOp(args: DispatchArgs): Promise<string> {
     if (!args.name) throw new Error('name is required for found')
-    return this.bridge.found(args.name, args.source, args.parent)
+    return this.bridge.found(args.name, args.source ?? '', args.parent)
   }
 
-  async _establish (args) {
+  private async establishOp(args: DispatchArgs): Promise<string> {
     if (!args.name) throw new Error('name is required for establish')
     if (!args.source) throw new Error('source is required for establish')
     if (!args.org) throw new Error('org is required for establish')
     return this.bridge.establish(args.name, args.source, args.org)
   }
 
-  async _hire (args) {
+  private async hireOp(args: DispatchArgs): Promise<string> {
     if (!args.name) throw new Error('name is required for hire')
     if (!args.org) throw new Error('org is required for hire')
     return this.bridge.hire(args.name, args.org)
   }
 
-  async _fire (args) {
+  private async fireOp(args: DispatchArgs): Promise<string> {
     if (!args.name) throw new Error('name is required for fire')
     if (!args.org) throw new Error('org is required for fire')
     return this.bridge.fire(args.name, args.org)
   }
 
-  async _appoint (args) {
+  private async appointOp(args: DispatchArgs): Promise<string> {
     if (!args.name) throw new Error('name is required for appoint')
     if (!args.position) throw new Error('position is required for appoint')
     if (!args.org) throw new Error('org is required for appoint')
     return this.bridge.appoint(args.name, args.position, args.org)
   }
 
-  async _dismiss (args) {
+  private async dismissOp(args: DispatchArgs): Promise<string> {
     if (!args.name) throw new Error('name is required for dismiss')
     if (!args.org) throw new Error('org is required for dismiss')
     return this.bridge.dismiss(args.name, args.org)
   }
 
-  async _directory (args) {
+  private async directoryOp(_args: DispatchArgs): Promise<unknown> {
     return this.bridge.directory()
   }
 
   // ---- 学习循环操作 ----
 
-  async _reflect (args) {
+  private async reflectOp(args: DispatchArgs): Promise<unknown> {
     if (!args.encounters) throw new Error('encounters is required for reflect')
-    return this.bridge.reflect(args.encounters, args.experience, args.id)
+    return this.bridge.reflect(args.encounters, args.experience ?? '', args.id)
   }
 
-  async _realize (args) {
+  private async realizeOp(args: DispatchArgs): Promise<unknown> {
     if (!args.experiences) throw new Error('experiences is required for realize')
-    return this.bridge.realize(args.experiences, args.principle, args.id)
+    return this.bridge.realize(args.experiences, args.principle ?? '', args.id)
   }
 
-  async _master (args) {
+  private async masterOp(args: DispatchArgs): Promise<unknown> {
     if (!args.procedure) throw new Error('procedure is required for master')
-    return this.bridge.master(args.procedure, args.id, args.experiences)
+    return this.bridge.master(args.procedure, args.id ?? '', args.experiences)
   }
 
-  async _forget (args) {
+  private async forgetOp(args: DispatchArgs): Promise<unknown> {
     if (!args.nodeId) throw new Error('nodeId is required for forget')
     return this.bridge.forget(args.nodeId)
   }
 
-  async _skill (args) {
+  private async skillOp(args: DispatchArgs): Promise<unknown> {
     if (!args.locator) throw new Error('locator is required for skill')
     return this.bridge.skill(args.locator)
   }
 
   // ---- 个体生命周期 ----
 
-  async _retire (args) {
+  private async retireOp(args: DispatchArgs): Promise<string> {
     if (!args.individual) throw new Error('individual is required for retire')
     return this.bridge.retire(args.individual)
   }
 
-  async _die (args) {
+  private async dieOp(args: DispatchArgs): Promise<string> {
     if (!args.individual) throw new Error('individual is required for die')
     return this.bridge.die(args.individual)
   }
 
-  async _rehire (args) {
+  private async rehireOp(args: DispatchArgs): Promise<string> {
     if (!args.individual) throw new Error('individual is required for rehire')
     return this.bridge.rehire(args.individual)
   }
 
-  async _train (args) {
+  private async trainOp(args: DispatchArgs): Promise<string> {
     if (!args.individual) throw new Error('individual is required for train')
     if (!args.skillId) throw new Error('skillId is required for train')
-    return this.bridge.train(args.individual, args.skillId, args.content)
+    return this.bridge.train(args.individual, args.skillId, args.content ?? '')
   }
 
   // ---- 组织管理 ----
 
-  async _charter (args) {
+  private async charterOp(args: DispatchArgs): Promise<string> {
     if (!args.org) throw new Error('org is required for charter')
     if (!args.content) throw new Error('content is required for charter')
     return this.bridge.charter(args.org, args.content)
   }
 
-  async _dissolve (args) {
+  private async dissolveOp(args: DispatchArgs): Promise<string> {
     if (!args.org) throw new Error('org is required for dissolve')
     return this.bridge.dissolve(args.org)
   }
 
   // ---- 职位管理 ----
 
-  async _charge (args) {
+  private async chargeOp(args: DispatchArgs): Promise<string> {
     if (!args.position) throw new Error('position is required for charge')
     if (!args.content) throw new Error('content is required for charge')
     return this.bridge.charge(args.position, args.content)
   }
 
-  async _require (args) {
+  private async requireOp(args: DispatchArgs): Promise<string> {
     if (!args.position) throw new Error('position is required for require')
     if (!args.skill) throw new Error('skill is required for require')
     return this.bridge.require(args.position, args.skill)
   }
 
-  async _abolish (args) {
+  private async abolishOp(args: DispatchArgs): Promise<string> {
     if (!args.position) throw new Error('position is required for abolish')
     return this.bridge.abolish(args.position)
   }
@@ -316,16 +414,16 @@ class RolexActionDispatcher {
    * 输入：args.roleIds (string[])，无前缀 = V1，"v2:" 前缀 = V2
    * 输出：{ operation: 'archive', results: Array<{ version, id, ok, error? }> }
    */
-  async _archive (args) {
+  private async archiveOp(args: DispatchArgs): Promise<DispatchResult> {
     if (!Array.isArray(args.roleIds) || args.roleIds.length === 0) {
       throw new Error('roleIds (non-empty array) is required for archive operation')
     }
     const results = await RoleLifecycle.archiveBatch(args.roleIds)
-    const failures = results.filter(r => !r.ok)
+    const failures = results.filter((r) => !r.ok)
     if (failures.length > 0) {
       logger.warn(
         `[RolexActionDispatcher] archive ${failures.length}/${results.length} failed:`,
-        failures,
+        failures as unknown as Error,
       )
     }
     return { operation: 'archive', total: results.length, failed: failures.length, results }
@@ -334,16 +432,16 @@ class RolexActionDispatcher {
   /**
    * 批量取消归档。
    */
-  async _unarchive (args) {
+  private async unarchiveOp(args: DispatchArgs): Promise<DispatchResult> {
     if (!Array.isArray(args.roleIds) || args.roleIds.length === 0) {
       throw new Error('roleIds (non-empty array) is required for unarchive operation')
     }
     const results = await RoleLifecycle.unarchiveBatch(args.roleIds)
-    const failures = results.filter(r => !r.ok)
+    const failures = results.filter((r) => !r.ok)
     if (failures.length > 0) {
       logger.warn(
         `[RolexActionDispatcher] unarchive ${failures.length}/${results.length} failed:`,
-        failures,
+        failures as unknown as Error,
       )
     }
     return { operation: 'unarchive', total: results.length, failed: failures.length, results }
@@ -359,14 +457,14 @@ class RolexActionDispatcher {
    * 输入：args.roleIds (string[]), args.force (boolean 可选)
    * 输出：{ operation: 'delete', total, failed, protected, results }
    */
-  async _delete (args) {
+  private async deleteOp(args: DispatchArgs): Promise<DispatchResult> {
     if (!Array.isArray(args.roleIds) || args.roleIds.length === 0) {
       throw new Error('roleIds (non-empty array) is required for delete operation')
     }
     const force = !!args.force
     const results = await RoleLifecycle.deleteBatch(args.roleIds, { force })
-    const failures = results.filter(r => !r.ok)
-    const protectedCount = results.filter(r => r.protected).length
+    const failures = results.filter((r) => !r.ok)
+    const protectedCount = results.filter((r) => r.protected).length
     if (protectedCount > 0 && !force) {
       logger.warn(
         `[RolexActionDispatcher] delete denied for ${protectedCount} protected role(s) (force=false). Pass force=true to override.`,
@@ -375,7 +473,7 @@ class RolexActionDispatcher {
     if (failures.length > 0) {
       logger.warn(
         `[RolexActionDispatcher] delete ${failures.length}/${results.length} failed:`,
-        failures,
+        failures as unknown as Error,
       )
     }
     return {
@@ -391,9 +489,7 @@ class RolexActionDispatcher {
   /**
    * 检查指定角色是否为 V2 角色
    */
-  async isV2Role (roleId) {
+  async isV2Role(roleId: string): Promise<boolean> {
     return this.bridge.isV2Role(roleId)
   }
 }
-
-module.exports = { RolexActionDispatcher }
