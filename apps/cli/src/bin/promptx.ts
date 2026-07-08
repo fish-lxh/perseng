@@ -43,7 +43,7 @@ async function restoreProjectForCLI() {
     const instances = await projectManager.getProjectInstances(cwd)
     if (instances.length > 0) {
       // Find the latest CLI mode instance, or use the first one if none found
-      const cliInstance = instances.find(i => i.transport === 'cli') || instances[0]
+      const cliInstance = instances.find((i: any) => i.transport === 'cli') || instances[0]
       
       // Restore project state
       ProjectManager.setCurrentProject(
