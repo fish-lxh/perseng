@@ -1,14 +1,53 @@
-const fs = require('fs-extra')
-const path = require('path')
-const os = require('os')
-const ProjectManager = require('../project/ProjectManager')
+/**
+ * DirectoryLocator - 目录定位器集合
+ *
+ * 统一管理所有路径解析逻辑，支持跨平台差异化实现。
+ * 包含基础抽象类 + 项目根定位器 + Perseng 工作空间定位器 + 工厂。
+ */
+
+import * as fs from 'fs-extra'
+import * as path from 'path'
+import * as os from 'os'
+
+// ProjectManager 仍在 project/ProjectManager.js (Phase 4 范围)，用 const+require 避免 consumers rootDir TS6059
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ProjectManager = require('../project/ProjectManager') as unknown as new () => {
+  getProjectsByMcpId(mcpId: string): Promise<Array<{ projectPath: string }>>
+}
+
+export interface DirectoryLocatorOptions {
+  strategies?: string[]
+  projectMarkers?: string[]
+  projectRootLocator?: ProjectRootLocator
+  avoidUserHome?: boolean
+}
+
+export interface LocateContext {
+  startDir?: string
+  strategies?: string[]
+  avoidUserHome?: boolean
+}
+
+export interface IDEDetectionInfo {
+  detectedIDE?: string
+  availableEnvVars?: Record<string, string>
+  cwd?: string
+  args?: string[]
+  platform?: string
+}
+
+// ---- 基础抽象类 --------------------------------------------------------
 
 /**
  * 目录定位器基础抽象类
  * 统一管理所有路径解析逻辑，支持跨平台差异化实现
  */
-class DirectoryLocator {
-  constructor(options = {}) {
+export class DirectoryLocator {
+  options: DirectoryLocatorOptions
+  protected cache: Map<string, string>
+  protected platform: string
+
+  constructor(options: DirectoryLocatorOptions = {}) {
     this.options = options
     this.cache = new Map()
     this.platform = process.platform
@@ -16,24 +55,22 @@ class DirectoryLocator {
 
   /**
    * 抽象方法：定位目录
-   * @param {Object} context - 定位上下文
-   * @returns {Promise<string>} 定位到的目录路径
    */
-  async locate(context = {}) {
+  async locate(_context: LocateContext = {}): Promise<string> {
     throw new Error('子类必须实现 locate 方法')
   }
 
   /**
    * 获取缓存
    */
-  getCached(key) {
+  getCached(key: string): string | undefined {
     return this.cache.get(key)
   }
 
   /**
    * 设置缓存
    */
-  setCached(key, value) {
+  setCached(key: string, value: string): string {
     this.cache.set(key, value)
     return value
   }
@@ -41,14 +78,14 @@ class DirectoryLocator {
   /**
    * 清除缓存
    */
-  clearCache() {
+  clearCache(): void {
     this.cache.clear()
   }
 
   /**
    * 检查路径是否存在且是目录
    */
-  async isValidDirectory(dirPath) {
+  async isValidDirectory(dirPath: string): Promise<boolean> {
     try {
       const stat = await fs.stat(dirPath)
       return stat.isDirectory()
@@ -60,7 +97,7 @@ class DirectoryLocator {
   /**
    * 规范化路径
    */
-  normalizePath(inputPath) {
+  normalizePath(inputPath: string | null | undefined): string | null {
     if (!inputPath || typeof inputPath !== 'string') {
       return null
     }
@@ -70,59 +107,65 @@ class DirectoryLocator {
   /**
    * 展开家目录路径
    */
-  expandHome(filepath) {
+  expandHome(filepath: string | null | undefined): string {
     if (!filepath || typeof filepath !== 'string') {
       return ''
     }
-    
+
     if (filepath.startsWith('~/') || filepath === '~') {
       return path.join(os.homedir(), filepath.slice(2))
     }
-    
+
     return filepath
   }
 }
+
+// ---- 项目根目录定位器 ---------------------------------------------------
 
 /**
  * 项目根目录定位器
  * 负责查找项目的根目录
  */
-class ProjectRootLocator extends DirectoryLocator {
-  constructor(options = {}) {
+export class ProjectRootLocator extends DirectoryLocator {
+  private projectManager: InstanceType<typeof ProjectManager>
+  protected strategies: string[]
+  protected projectMarkers: string[]
+
+  constructor(options: DirectoryLocatorOptions = {}) {
     super(options)
-    
+
     // 初始化AI驱动的项目管理器
     this.projectManager = new ProjectManager()
-    
+
     // 可配置的查找策略优先级（按可靠性和准确性排序）
-    this.strategies = options.strategies || [
-      'aiProvidedProjectPath',              // 1. AI提供的项目路径（最可靠，由AI告知）
-      'existingPromptxDirectory',           // 2. 现有.promptx目录（最可靠的项目标识）
-      'packageJsonDirectory',               // 3. 向上查找项目标识文件（最准确的项目边界）
-      'gitRootDirectory',                   // 4. Git根目录（通用可靠）
+    this.strategies = options.strategies ?? [
+      'aiProvidedProjectPath', // 1. AI提供的项目路径（最可靠，由AI告知）
+      'existingPromptxDirectory', // 2. 现有.promptx目录（最可靠的项目标识）
+      'packageJsonDirectory', // 3. 向上查找项目标识文件（最准确的项目边界）
+      'gitRootDirectory', // 4. Git根目录（通用可靠）
       'currentWorkingDirectoryIfHasMarkers', // 5. 当前目录项目标识（降级策略）
-      'currentWorkingDirectory'             // 6. 纯当前目录（最后回退）
+      'currentWorkingDirectory', // 6. 纯当前目录（最后回退）
     ]
-    
+
     // 项目标识文件
-    this.projectMarkers = options.projectMarkers || [
+    this.projectMarkers = options.projectMarkers ?? [
       'package.json',
       '.git',
       'pyproject.toml',
       'Cargo.toml',
       'pom.xml',
       'build.gradle',
-      'composer.json'
+      'composer.json',
     ]
   }
 
   /**
    * 定位项目根目录
    */
-  async locate(context = {}) {
+  async locate(context: LocateContext = {}): Promise<string> {
     const { startDir = process.cwd() } = context
     const cacheKey = `projectRoot:${startDir}`
-    
+
     // 检查缓存
     const cached = this.getCached(cacheKey)
     if (cached) {
@@ -134,8 +177,8 @@ class ProjectRootLocator extends DirectoryLocator {
 
     // 按策略优先级查找
     for (const strategy of strategies) {
-      const result = await this._executeStrategy(strategy, startDir, context)
-      if (result && await this._validateProjectRoot(result, context)) {
+      const result = await this.executeStrategy(strategy, startDir, context)
+      if (result && (await this.validateProjectRoot(result, context))) {
         return this.setCached(cacheKey, result)
       }
     }
@@ -147,26 +190,30 @@ class ProjectRootLocator extends DirectoryLocator {
   /**
    * 执行特定的查找策略
    */
-  async _executeStrategy(strategy, startDir, context) {
+  protected async executeStrategy(
+    strategy: string,
+    startDir: string,
+    _context: LocateContext,
+  ): Promise<string | null> {
     switch (strategy) {
       case 'aiProvidedProjectPath':
-        return await this._findByAIProvidedPath()
-      
+        return await this.findByAIProvidedPath()
+
       case 'existingPromptxDirectory':
-        return await this._findByExistingPromptx(startDir)
-      
+        return await this.findByExistingPromptx(startDir)
+
       case 'currentWorkingDirectoryIfHasMarkers':
-        return await this._checkCurrentDirForMarkers(startDir)
-      
+        return await this.checkCurrentDirForMarkers(startDir)
+
       case 'packageJsonDirectory':
-        return await this._findByProjectMarkers(startDir)
-      
+        return await this.findByProjectMarkers(startDir)
+
       case 'gitRootDirectory':
-        return await this._findByGitRoot(startDir)
-      
+        return await this.findByGitRoot(startDir)
+
       case 'currentWorkingDirectory':
         return startDir
-      
+
       default:
         return null
     }
@@ -175,16 +222,16 @@ class ProjectRootLocator extends DirectoryLocator {
   /**
    * 通过AI提供的项目路径查找（最高优先级）
    */
-  async _findByAIProvidedPath() {
+  private async findByAIProvidedPath(): Promise<string | null> {
     try {
       // 注意：多项目环境下需要传入mcpId，这里使用临时ID
       const tempMcpId = process.env.PERSENG_MCP_ID || `temp-${process.pid}`
       const projects = await this.projectManager.getProjectsByMcpId(tempMcpId)
-      const aiProvidedPath = projects.length > 0 ? projects[0].projectPath : null
-      if (aiProvidedPath && await this.isValidDirectory(aiProvidedPath)) {
+      const aiProvidedPath = projects.length > 0 ? projects[0]?.projectPath : null
+      if (aiProvidedPath && (await this.isValidDirectory(aiProvidedPath))) {
         return aiProvidedPath
       }
-    } catch (error) {
+    } catch {
       // AI提供的路径获取失败，继续使用其他策略
     }
     return null
@@ -193,9 +240,9 @@ class ProjectRootLocator extends DirectoryLocator {
   /**
    * 检查当前目录是否包含项目标识文件
    */
-  async _checkCurrentDirForMarkers(startDir) {
+  private async checkCurrentDirForMarkers(startDir: string): Promise<string | null> {
     const currentDir = path.resolve(startDir)
-    
+
     // 检查当前目录是否包含项目标识文件
     for (const marker of this.projectMarkers) {
       const markerPath = path.join(currentDir, marker)
@@ -203,14 +250,15 @@ class ProjectRootLocator extends DirectoryLocator {
         return currentDir
       }
     }
-    
+
     return null
   }
 
   /**
    * 通过现有.promptx目录查找
+   * 公开以便 PersengWorkspaceLocator 跨类复用
    */
-  async _findByExistingPromptx(startDir) {
+  async findByExistingPromptx(startDir: string): Promise<string | null> {
     let currentDir = path.resolve(startDir)
     const root = path.parse(currentDir).root
 
@@ -219,7 +267,7 @@ class ProjectRootLocator extends DirectoryLocator {
       if (await this.isValidDirectory(promptxPath)) {
         return currentDir
       }
-      
+
       const parentDir = path.dirname(currentDir)
       if (parentDir === currentDir) break
       currentDir = parentDir
@@ -231,7 +279,7 @@ class ProjectRootLocator extends DirectoryLocator {
   /**
    * 通过项目标识文件查找
    */
-  async _findByProjectMarkers(startDir) {
+  private async findByProjectMarkers(startDir: string): Promise<string | null> {
     let currentDir = path.resolve(startDir)
     const root = path.parse(currentDir).root
 
@@ -242,7 +290,7 @@ class ProjectRootLocator extends DirectoryLocator {
           return currentDir
         }
       }
-      
+
       const parentDir = path.dirname(currentDir)
       if (parentDir === currentDir) break
       currentDir = parentDir
@@ -254,7 +302,7 @@ class ProjectRootLocator extends DirectoryLocator {
   /**
    * 通过Git根目录查找
    */
-  async _findByGitRoot(startDir) {
+  private async findByGitRoot(startDir: string): Promise<string | null> {
     let currentDir = path.resolve(startDir)
     const root = path.parse(currentDir).root
 
@@ -263,7 +311,7 @@ class ProjectRootLocator extends DirectoryLocator {
       if (await fs.pathExists(gitPath)) {
         return currentDir
       }
-      
+
       const parentDir = path.dirname(currentDir)
       if (parentDir === currentDir) break
       currentDir = parentDir
@@ -275,7 +323,10 @@ class ProjectRootLocator extends DirectoryLocator {
   /**
    * 验证项目根目录
    */
-  async _validateProjectRoot(projectRoot, context = {}) {
+  protected async validateProjectRoot(
+    projectRoot: string,
+    context: LocateContext = {},
+  ): Promise<boolean> {
     // Windows平台：避免用户家目录
     if (this.platform === 'win32' && context.avoidUserHome !== false) {
       const homeDir = os.homedir()
@@ -288,21 +339,27 @@ class ProjectRootLocator extends DirectoryLocator {
   }
 }
 
+// ---- Perseng 工作空间定位器 ----------------------------------------------
+
 /**
  * Perseng 工作空间定位器
  * 负责确定 .perseng 目录的位置(原 .promptx 已迁移)
  */
-class PersengWorkspaceLocator extends DirectoryLocator {
-  constructor(options = {}) {
+export class PersengWorkspaceLocator extends DirectoryLocator {
+  private projectRootLocator: ProjectRootLocator
+  private projectManager: InstanceType<typeof ProjectManager>
+  private _detectedIDE?: string
+
+  constructor(options: DirectoryLocatorOptions = {}) {
     super(options)
-    this.projectRootLocator = options.projectRootLocator || new ProjectRootLocator(options)
+    this.projectRootLocator = options.projectRootLocator ?? new ProjectRootLocator(options)
     this.projectManager = new ProjectManager()
   }
 
   /**
    * 定位Perseng工作空间
    */
-  async locate(context = {}) {
+  async locate(context: LocateContext = {}): Promise<string> {
     const cacheKey = `persengWorkspace:${JSON.stringify(context)}`
 
     // 检查缓存
@@ -312,60 +369,60 @@ class PersengWorkspaceLocator extends DirectoryLocator {
     }
 
     // 策略1：AI提供的项目路径（最高优先级 - AI驱动的路径管理）
-    const workspaceFromAI = await this._fromAIProvidedPath()
+    const workspaceFromAI = await this.fromAIProvidedPath()
     if (workspaceFromAI) {
       return this.setCached(cacheKey, workspaceFromAI)
     }
 
     // 策略2：IDE环境变量（用户/IDE明确指定）
-    const workspaceFromIDE = await this._fromIDEEnvironment()
+    const workspaceFromIDE = await this.fromIDEEnvironment()
     if (workspaceFromIDE) {
       return this.setCached(cacheKey, workspaceFromIDE)
     }
 
     // 策略3:Perseng 专用环境变量(用户手动配置,品牌改名后 env 也改为 PERSENG_*)
-    const workspaceFromEnv = await this._fromPromptXEnvironment()
+    const workspaceFromEnv = await this.fromPromptXEnvironment()
     if (workspaceFromEnv) {
       return this.setCached(cacheKey, workspaceFromEnv)
     }
 
     // 策略4：特定上下文策略（如init命令的强制指定）
     if (context.strategies) {
-      const workspaceFromProject = await this._fromProjectRoot(context)
+      const workspaceFromProject = await this.fromProjectRoot(context)
       if (workspaceFromProject) {
         return this.setCached(cacheKey, workspaceFromProject)
       }
     }
 
     // 策略5:现有 .perseng 目录(已初始化的项目,原 .promptx 迁移而来)
-    const workspaceFromExisting = await this._fromExistingDirectory(context.startDir)
+    const workspaceFromExisting = await this.fromExistingDirectory(context.startDir)
     if (workspaceFromExisting) {
       return this.setCached(cacheKey, workspaceFromExisting)
     }
 
     // 策略6：项目根目录（基于项目结构推断）
-    const workspaceFromProject = await this._fromProjectRoot(context)
+    const workspaceFromProject = await this.fromProjectRoot(context)
     if (workspaceFromProject) {
       return this.setCached(cacheKey, workspaceFromProject)
     }
 
     // 策略7：智能回退策略（兜底方案）
-    return this.setCached(cacheKey, await this._getSmartFallback(context))
+    return this.setCached(cacheKey, await this.getSmartFallback(context))
   }
 
   /**
    * 从AI提供的项目路径获取（最高优先级）
    */
-  async _fromAIProvidedPath() {
+  private async fromAIProvidedPath(): Promise<string | null> {
     try {
       // 注意：多项目环境下需要传入mcpId，这里使用临时ID
       const tempMcpId = process.env.PERSENG_MCP_ID || `temp-${process.pid}`
       const projects = await this.projectManager.getProjectsByMcpId(tempMcpId)
-      const aiProvidedPath = projects.length > 0 ? projects[0].projectPath : null
-      if (aiProvidedPath && await this.isValidDirectory(aiProvidedPath)) {
+      const aiProvidedPath = projects.length > 0 ? projects[0]?.projectPath : null
+      if (aiProvidedPath && (await this.isValidDirectory(aiProvidedPath))) {
         return aiProvidedPath
       }
-    } catch (error) {
+    } catch {
       // AI提供的路径获取失败，继续使用其他策略
     }
     return null
@@ -374,58 +431,64 @@ class PersengWorkspaceLocator extends DirectoryLocator {
   /**
    * 从IDE环境变量获取（支持多种IDE）
    */
-  async _fromIDEEnvironment() {
+  private async fromIDEEnvironment(): Promise<string | null> {
+    interface IDEStrategy {
+      name: string
+      vars: string[]
+      parse: (value: string, varName: string) => string | null
+    }
+
     // IDE环境变量检测策略（按优先级排序）
-    const ideStrategies = [
+    const ideStrategies: IDEStrategy[] = [
       // Claude IDE (现有格式)
       {
         name: 'Claude IDE',
         vars: ['WORKSPACE_FOLDER_PATHS'],
-        parse: (value, varName) => {
+        parse: (value) => {
           try {
             const folders = JSON.parse(value)
             return Array.isArray(folders) && folders.length > 0 ? folders[0] : null
           } catch {
             return null
           }
-        }
+        },
       },
-      
+
       // VSCode
       {
         name: 'VSCode',
         vars: ['VSCODE_WORKSPACE_FOLDER', 'VSCODE_CWD'],
-        parse: (value, varName) => value
+        parse: (value) => value,
       },
-      
+
       // IntelliJ IDEA / WebStorm / PhpStorm
       {
         name: 'JetBrains IDEs',
         vars: ['PROJECT_ROOT', 'IDEA_INITIAL_DIRECTORY', 'WEBSTORM_PROJECT_PATH'],
-        parse: (value, varName) => value
+        parse: (value) => value,
       },
-      
+
       // Sublime Text
       {
         name: 'Sublime Text',
         vars: ['SUBLIME_PROJECT_PATH', 'SUBL_PROJECT_DIR'],
-        parse: (value, varName) => value
+        parse: (value) => value,
       },
-      
+
       // Atom
       {
         name: 'Atom',
         vars: ['ATOM_PROJECT_PATH', 'ATOM_HOME_PROJECT'],
-        parse: (value, varName) => value
+        parse: (value) => value,
       },
-      
+
       // Vim/Neovim
       {
         name: 'Vim/Neovim',
         vars: ['VIM_PROJECT_ROOT', 'NVIM_PROJECT_ROOT'],
-        parse: (value, varName) => value
+        parse: (value) => value,
       },
-      
+
       // 字节跳动 Trae 和其他基于PWD的IDE
       {
         name: 'ByteDance Trae & PWD-based IDEs',
@@ -435,7 +498,7 @@ class PersengWorkspaceLocator extends DirectoryLocator {
           if (varName === 'TRAE_WORKSPACE' || varName === 'BYTEDANCE_WORKSPACE') {
             return value
           }
-          
+
           // 对于PWD，只有当它与process.cwd()不同时，才认为是IDE设置的项目路径
           if (varName === 'PWD') {
             const currentCwd = process.cwd()
@@ -443,17 +506,17 @@ class PersengWorkspaceLocator extends DirectoryLocator {
               return value
             }
           }
-          
+
           return null
-        }
+        },
       },
-      
+
       // 通用工作目录
       {
         name: 'Generic',
         vars: ['WORKSPACE_ROOT', 'PROJECT_DIR', 'WORKING_DIRECTORY'],
-        parse: (value, varName) => value
-      }
+        parse: (value) => value,
+      },
     ]
 
     // 按策略逐一检测
@@ -465,7 +528,7 @@ class PersengWorkspaceLocator extends DirectoryLocator {
           const parsedPath = strategy.parse(envValue.trim(), varName)
           if (parsedPath) {
             const normalizedPath = this.normalizePath(this.expandHome(parsedPath))
-            if (normalizedPath && await this.isValidDirectory(normalizedPath)) {
+            if (normalizedPath && (await this.isValidDirectory(normalizedPath))) {
               // 记录检测到的IDE类型（用于调试）
               this._detectedIDE = strategy.name
               return normalizedPath
@@ -474,18 +537,18 @@ class PersengWorkspaceLocator extends DirectoryLocator {
         }
       }
     }
-    
+
     return null
   }
 
   /**
    * 从Perseng环境变量获取
    */
-  async _fromPromptXEnvironment() {
+  private async fromPromptXEnvironment(): Promise<string | null> {
     const promptxWorkspaceEnv = process.env.PERSENG_WORKSPACE
     if (promptxWorkspaceEnv && promptxWorkspaceEnv.trim() !== '') {
       const workspacePath = this.normalizePath(this.expandHome(promptxWorkspaceEnv))
-      if (workspacePath && await this.isValidDirectory(workspacePath)) {
+      if (workspacePath && (await this.isValidDirectory(workspacePath))) {
         return workspacePath
       }
     }
@@ -495,26 +558,28 @@ class PersengWorkspaceLocator extends DirectoryLocator {
   /**
    * 从现有.promptx目录获取
    */
-  async _fromExistingDirectory(startDir) {
-    const projectRoot = await this.projectRootLocator._findByExistingPromptx(startDir || process.cwd())
+  private async fromExistingDirectory(startDir: string | undefined): Promise<string | null> {
+    const projectRoot = await this.projectRootLocator.findByExistingPromptx(
+      startDir || process.cwd(),
+    )
     return projectRoot
   }
 
   /**
    * 从项目根目录获取
    */
-  async _fromProjectRoot(context) {
-    const projectRoot = await this.projectRootLocator.locate(context)
+  private async fromProjectRoot(_context: LocateContext): Promise<string | null> {
+    const projectRoot = await this.projectRootLocator.locate(_context)
     return projectRoot
   }
 
   /**
    * 智能回退策略
    */
-  async _getSmartFallback(context) {
+  private async getSmartFallback(_context: LocateContext): Promise<string> {
     // 1. 尝试从命令行参数推断
-    const argPath = await this._fromProcessArguments()
-    if (argPath && await this.isValidDirectory(argPath)) {
+    const argPath = await this.fromProcessArguments()
+    if (argPath && (await this.isValidDirectory(argPath))) {
       return argPath
     }
 
@@ -531,84 +596,99 @@ class PersengWorkspaceLocator extends DirectoryLocator {
   /**
    * 从进程参数推断项目路径
    */
-  async _fromProcessArguments() {
+  private async fromProcessArguments(): Promise<string | null> {
     const args = process.argv
-    
+
     // 查找可能的路径参数
     for (let i = 0; i < args.length; i++) {
       const arg = args[i]
-      
+      if (arg === undefined) continue
+
       // 查找 --project-path 或类似参数
       if (arg.startsWith('--project-path=')) {
-        return arg.split('=')[1]
+        return arg.split('=')[1] ?? null
       }
-      
+
       if (arg === '--project-path' && i + 1 < args.length) {
-        return args[i + 1]
+        return args[i + 1] ?? null
       }
-      
+
       // 查找 --cwd 参数
       if (arg.startsWith('--cwd=')) {
-        return arg.split('=')[1]
+        return arg.split('=')[1] ?? null
       }
-      
+
       if (arg === '--cwd' && i + 1 < args.length) {
-        return args[i + 1]
+        return args[i + 1] ?? null
       }
     }
-    
+
     return null
   }
 
   /**
    * 获取检测调试信息
    */
-  getDetectionInfo() {
+  getDetectionInfo(): IDEDetectionInfo {
     return {
       detectedIDE: this._detectedIDE || 'Unknown',
-      availableEnvVars: this._getAvailableEnvVars(),
+      availableEnvVars: this.getAvailableEnvVars(),
       platform: process.platform,
       cwd: process.cwd(),
-      args: process.argv
+      args: process.argv,
     }
   }
 
   /**
    * 获取可用的环境变量
    */
-  _getAvailableEnvVars() {
+  private getAvailableEnvVars(): Record<string, string> {
     const relevantVars = [
-      'WORKSPACE_FOLDER_PATHS', 'VSCODE_WORKSPACE_FOLDER', 'VSCODE_CWD',
-      'PROJECT_ROOT', 'IDEA_INITIAL_DIRECTORY', 'WEBSTORM_PROJECT_PATH',
-      'SUBLIME_PROJECT_PATH', 'SUBL_PROJECT_DIR',
-      'ATOM_PROJECT_PATH', 'ATOM_HOME_PROJECT',
-      'VIM_PROJECT_ROOT', 'NVIM_PROJECT_ROOT',
-      'PWD', 'TRAE_WORKSPACE', 'BYTEDANCE_WORKSPACE',
-      'WORKSPACE_ROOT', 'PROJECT_DIR', 'WORKING_DIRECTORY',
-      'PERSENG_WORKSPACE'
+      'WORKSPACE_FOLDER_PATHS',
+      'VSCODE_WORKSPACE_FOLDER',
+      'VSCODE_CWD',
+      'PROJECT_ROOT',
+      'IDEA_INITIAL_DIRECTORY',
+      'WEBSTORM_PROJECT_PATH',
+      'SUBLIME_PROJECT_PATH',
+      'SUBL_PROJECT_DIR',
+      'ATOM_PROJECT_PATH',
+      'ATOM_HOME_PROJECT',
+      'VIM_PROJECT_ROOT',
+      'NVIM_PROJECT_ROOT',
+      'PWD',
+      'TRAE_WORKSPACE',
+      'BYTEDANCE_WORKSPACE',
+      'WORKSPACE_ROOT',
+      'PROJECT_DIR',
+      'WORKING_DIRECTORY',
+      'PERSENG_WORKSPACE',
     ]
-    
-    const available = {}
+
+    const available: Record<string, string> = {}
     for (const varName of relevantVars) {
-      if (process.env[varName]) {
-        available[varName] = process.env[varName]
+      const value = process.env[varName]
+      if (value) {
+        available[varName] = value
       }
     }
-    
+
     return available
   }
 }
 
+// ---- 工厂 --------------------------------------------------------------
+
 /**
  * 目录定位器工厂
  */
-class DirectoryLocatorFactory {
+export class DirectoryLocatorFactory {
   /**
    * 创建项目根目录定位器
    */
-  static createProjectRootLocator(options = {}) {
+  static createProjectRootLocator(options: DirectoryLocatorOptions = {}): ProjectRootLocator {
     const platform = process.platform
-    
+
     // 根据平台创建特定实现
     if (platform === 'win32') {
       return new WindowsProjectRootLocator(options)
@@ -620,41 +700,48 @@ class DirectoryLocatorFactory {
   /**
    * 创建 Perseng 工作空间定位器
    */
-  static createPersengWorkspaceLocator(options = {}) {
+  static createPersengWorkspaceLocator(
+    options: DirectoryLocatorOptions = {},
+  ): PersengWorkspaceLocator {
     const projectRootLocator = this.createProjectRootLocator(options)
     return new PersengWorkspaceLocator({
       ...options,
-      projectRootLocator
+      projectRootLocator,
     })
   }
 
   /**
    * 获取平台信息
    */
-  static getPlatform() {
+  static getPlatform(): string {
     return process.platform
   }
 }
+
+// ---- Windows 特定实现 ---------------------------------------------------
 
 /**
  * Windows平台的项目根目录定位器
  * 特殊处理Windows环境下的路径问题
  */
-class WindowsProjectRootLocator extends ProjectRootLocator {
-  constructor(options = {}) {
+export class WindowsProjectRootLocator extends ProjectRootLocator {
+  constructor(options: DirectoryLocatorOptions = {}) {
     super({
       ...options,
       // Windows默认避免用户家目录
-      avoidUserHome: options.avoidUserHome !== false
+      avoidUserHome: options.avoidUserHome !== false,
     })
   }
 
   /**
    * Windows特有的项目根目录验证
    */
-  async _validateProjectRoot(projectRoot, context = {}) {
+  protected override async validateProjectRoot(
+    projectRoot: string,
+    context: LocateContext = {},
+  ): Promise<boolean> {
     // 调用基类验证
-    const baseValid = await super._validateProjectRoot(projectRoot, context)
+    const baseValid = await super.validateProjectRoot(projectRoot, context)
     if (!baseValid) {
       return false
     }
@@ -664,7 +751,7 @@ class WindowsProjectRootLocator extends ProjectRootLocator {
       'C:\\Windows',
       'C:\\Program Files',
       'C:\\Program Files (x86)',
-      'C:\\System Volume Information'
+      'C:\\System Volume Information',
     ]
 
     const resolvedPath = path.resolve(projectRoot).toUpperCase()
@@ -676,12 +763,4 @@ class WindowsProjectRootLocator extends ProjectRootLocator {
 
     return true
   }
-}
-
-module.exports = {
-  DirectoryLocator,
-  ProjectRootLocator,
-  PersengWorkspaceLocator,
-  DirectoryLocatorFactory,
-  WindowsProjectRootLocator
 }
