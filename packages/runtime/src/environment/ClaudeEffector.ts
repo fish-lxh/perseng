@@ -12,7 +12,7 @@ import type { SDKMessage, SDKPartialAssistantMessage } from "@anthropic-ai/claud
 import { Subject, Subscription, TimeoutError } from "rxjs";
 import { timeout } from "rxjs/operators";
 import { createLogger } from "@agentxjs/common";
-import { buildSDKUserMessage } from "./helpers";
+import { buildSDKUserMessage, formatClockNote } from "./helpers";
 import type { ClaudeReceptor, ReceptorMeta } from "./ClaudeReceptor";
 import { SDKQueryLifecycle } from "./SDKQueryLifecycle";
 import { ContextManager } from "./ContextManager";
@@ -53,6 +53,13 @@ export interface ClaudeEffectorConfig {
   extraArgs?: Record<string, string | null>;
   /** Extra environment variables injected into the Claude Code subprocess. */
   extraEnv?: Record<string, string>;
+  /**
+   * Inject a per-turn `[System Clock: ...]` prefix into every user message so
+   * the model always knows real wall-clock time (LLMs otherwise have no sense
+   * of "now"). Default: true. Disable for tests or contexts where deterministic
+   * prompts are required.
+   */
+  enableClockInjection?: boolean;
 }
 
 /**
@@ -191,7 +198,12 @@ export class ClaudeEffector implements Effector {
       await this.queryLifecycle.initialize();
 
       const sessionId = this.config.sessionId || "default";
-      const sdkUserMessage = buildSDKUserMessage(message, sessionId);
+
+      // KNUTH-FEAT: per-turn clock injection — keep `Date.now()` as close to
+      // the network call as possible. Cost: ~30-40 tokens/turn.
+      const clockNote =
+        this.config.enableClockInjection === false ? undefined : formatClockNote();
+      const sdkUserMessage = buildSDKUserMessage(message, sessionId, clockNote);
 
       logger.debug("Sending message to Claude", {
         content:
