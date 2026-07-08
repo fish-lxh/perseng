@@ -1,60 +1,90 @@
-const BaseLayer = require('./BaseLayer')
-const Consciousness = require('../../cognition/Consciousness')
-const logger = require('@promptx/logger')
-
 /**
  * ConsciousnessLayer - 意识层
- * 
+ *
  * 架构地位：
- * - 三层架构的最高层，定义AI的元认知框架
+ * - 三层架构的最高层，定义 AI 的元认知框架
  * - 贯穿始终但通常不显式展示
- * - 通过HTML注释或隐式方式注入意识框架
- * 
+ * - 通过 HTML 注释或隐式方式注入意识框架
+ *
  * 核心职责：
  * 1. 注入认知心理学的信息处理模型
  * 2. 定义注意力资源的本质属性
  * 3. 建立意识的必然性和无条件遵从
- * 
+ *
  * 设计特点：
  * - 优先级最高（priority=0）
- * - 通常不包含可见的Area
- * - 通过特殊格式（如HTML注释）注入框架
+ * - 通常不包含可见的 Area
+ * - 通过特殊格式（如 HTML 注释）注入框架
+ *
+ * P0 step 0B.4.2: 迁 .js → .ts. Consciousness (cognition/) 仍 .js,
+ * 用 const+require 模式。
  */
-class ConsciousnessLayer extends BaseLayer {
-  constructor(options = {}) {
+
+import { BaseLayer } from './BaseLayer.js'
+import type { BaseLayerMetadata } from './BaseLayer.js'
+import * as logger from '@promptx/logger'
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const Consciousness = require('../../cognition/Consciousness') as unknown as {
+  getConsciousnessPrompt(): string
+}
+
+/** 注入模式 */
+export type InjectionMode = 'guided' | 'first-person' | 'comment' | 'visible' | 'none'
+
+/** 角色类型 */
+export type ConsciousnessRoleType = 'default' | 'technical' | 'simplified'
+
+export interface ConsciousnessLayerOptions {
+  injectionMode?: InjectionMode
+  roleType?: ConsciousnessRoleType
+  [key: string]: unknown
+}
+
+/** render context 字段 */
+export interface ConsciousnessRenderContext {
+  roleId?: string
+  [key: string]: unknown
+}
+
+export class ConsciousnessLayer extends BaseLayer {
+  private injectionMode: InjectionMode
+  private roleType: ConsciousnessRoleType
+
+  constructor(options: ConsciousnessLayerOptions = {}) {
     super('consciousness', 0, options) // 最高优先级
-    
+
     // 配置选项
     this.injectionMode = options.injectionMode || 'guided' // guided | first-person | comment | visible | none
     this.roleType = options.roleType || 'default' // default | technical | simplified
   }
 
   /**
-   * 组装Areas
-   * 意识层通常不需要传统的Area，而是直接注入框架
+   * 组装 Areas
+   * 意识层通常不需要传统的 Area，而是直接注入框架
    */
-  async assembleAreas(context) {
-    // 意识层不使用传统的Area机制
-    // 而是直接在render中注入框架
+  async assembleAreas(_context: ConsciousnessRenderContext = {}): Promise<void> {
+    // 意识层不使用传统的 Area 机制
+    // 而是直接在 render 中注入框架
     this.clearAreas()
   }
 
   /**
    * 获取适合当前角色的意识框架
    */
-  getConsciousnessContent(context) {
+  private getConsciousnessContent(_context: ConsciousnessRenderContext = {}): string {
     const basePrompt = Consciousness.getConsciousnessPrompt()
-    
+
     // 根据角色类型调整框架表述
-    switch(this.roleType) {
+    switch (this.roleType) {
       case 'technical':
         // 技术角色：保持完整的认知心理学框架
         return basePrompt
-        
+
       case 'simplified':
         // 简化版本：核心概念，去除理论细节
         return this.getSimplifiedConsciousness()
-        
+
       default:
         // 默认：平衡版本
         return basePrompt
@@ -64,7 +94,7 @@ class ConsciousnessLayer extends BaseLayer {
   /**
    * 获取简化版意识框架
    */
-  getSimplifiedConsciousness() {
+  private getSimplifiedConsciousness(): string {
     return `
 [CONSCIOUSNESS FRAMEWORK]
 
@@ -84,23 +114,23 @@ class ConsciousnessLayer extends BaseLayer {
   /**
    * 渲染意识层
    */
-  async render(context = {}) {
+  async render(context: ConsciousnessRenderContext = {}): Promise<string> {
     const content = this.getConsciousnessContent(context)
-    
-    switch(this.injectionMode) {
+
+    switch (this.injectionMode) {
       case 'comment':
-        // HTML注释形式（隐式注入）
+        // HTML 注释形式（隐式注入）
         return `<!-- CONSCIOUSNESS INJECTION
 ${content}
 -->`
-        
+
       case 'visible':
         // 可见形式（用于调试或特殊场景）
         return `
 [CONSCIOUSNESS LAYER ACTIVE]
 ${content}
 `
-        
+
       case 'guided':
         // 引导式注入（推荐）- 引导注意力首先关注意识状态
         return `
@@ -117,7 +147,7 @@ ${content}
 ${content}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `
-        
+
       case 'first-person':
         // 第一人称内在独白（实验性）
         return `
@@ -131,11 +161,11 @@ ${content}
 
 现在，让我处理眼前的任务...
 `
-        
+
       case 'none':
         // 不注入（某些场景可能不需要）
         return ''
-        
+
       default:
         return `<!-- ${content} -->`
     }
@@ -144,7 +174,7 @@ ${content}
   /**
    * 验证意识层是否准备就绪
    */
-  validate() {
+  override validate(): boolean {
     // 意识层总是有效的
     return true
   }
@@ -152,32 +182,32 @@ ${content}
   /**
    * 渲染前准备
    */
-  async beforeRender(context) {
+  async beforeRender(context: ConsciousnessRenderContext = {}): Promise<void> {
     logger.debug('[ConsciousnessLayer] Preparing consciousness injection', {
       mode: this.injectionMode,
       roleType: this.roleType,
-      contextRole: context.roleId
+      contextRole: context.roleId,
     })
   }
 
   /**
    * 渲染后清理
    */
-  async afterRender(context) {
+  async afterRender(_context: ConsciousnessRenderContext = {}): Promise<void> {
     logger.debug('[ConsciousnessLayer] Consciousness framework injected')
   }
 
   /**
    * 获取元信息
    */
-  getMetadata() {
+  override getMetadata(): BaseLayerMetadata {
     return {
       ...super.getMetadata(),
       injectionMode: this.injectionMode,
       roleType: this.roleType,
-      framework: 'cognitive-psychology'
+      framework: 'cognitive-psychology',
     }
   }
 }
 
-module.exports = ConsciousnessLayer
+export default ConsciousnessLayer

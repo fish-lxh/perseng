@@ -7,21 +7,22 @@
  * - onlyArchived=true 时顶部加提示
  * - V2 角色走 V2 分支（archiveTag 同样生效）
  * - 混合来源 + 混合 archived 状态
+ *
+ * P0 step 0B.4.2: 迁 .js → .ts, 用 ESM import + vitest extensionAlias
  */
 
 import { describe, it, expect } from 'vitest'
-import { createRequire } from 'module'
+import { RoleListArea, type RoleCategories, type RoleEntry } from '../RoleListArea.js'
 
-const require = createRequire(import.meta.url)
-const RoleListArea = require('../RoleListArea')
-
-function makeCategories (roles) {
-  return {
-    system: roles.filter(r => r.source === 'system'),
-    project: roles.filter(r => r.source === 'project'),
-    user: roles.filter(r => r.source === 'user'),
-    rolex: roles.filter(r => r.source === 'rolex'),
+/** 把扁平角色列表按 source 字段分类成 RoleCategories。 */
+function makeCategories(roles: RoleEntry[]): RoleCategories {
+  const out: RoleCategories = { system: [], project: [], user: [], rolex: [] }
+  for (const r of roles) {
+    const key = r.source ?? 'user'
+    if (!out[key]) out[key] = []
+    out[key].push(r)
   }
+  return out
 }
 
 describe('RoleListArea / default rendering', () => {

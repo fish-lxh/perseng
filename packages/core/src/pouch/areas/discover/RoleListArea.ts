@@ -1,6 +1,3 @@
-const BaseArea = require('../BaseArea')
-const logger = require('@promptx/logger')
-
 /**
  * RoleListArea - 角色列表展示区域
  *
@@ -9,9 +6,52 @@ const logger = require('@promptx/logger')
  * - onlyArchived: 当为 true 时，仅渲染 archived 角色（也会带标记，保持一致）
  *
  * 正常过滤由 DiscoverCommand.loadRoleRegistry 完成，本类只负责标记渲染。
+ *
+ * P0 step 0B.4.2: 迁 .js → .ts, BaseArea .ts; logger 原 .js 是 dead import, 清理掉。
  */
-class RoleListArea extends BaseArea {
-  constructor(roleCategories, directoryData = null, archiveFilter = {}) {
+
+import { BaseArea } from '../BaseArea.js'
+
+/** 角色条目（仅取渲染用到的字段） */
+export interface RoleEntry {
+  id: string
+  name?: string
+  title?: string
+  source?: string
+  version?: string
+  archived?: boolean
+}
+
+export interface RoleCategories {
+  [source: string]: RoleEntry[]
+}
+
+/** Directory 数据接口（仅取角色查找用到的字段） */
+export interface DirectoryData {
+  roles: Array<{ name: string; org?: string; position?: string }>
+  organizations: unknown[]
+}
+
+export interface ArchiveFilter {
+  showArchived?: boolean
+  onlyArchived?: boolean
+}
+
+export interface OrganizationInfo {
+  org: string
+  position: string
+}
+
+export class RoleListArea extends BaseArea {
+  private roleCategories: RoleCategories
+  private directoryData: DirectoryData | null
+  private archiveFilter: { showArchived: boolean; onlyArchived: boolean }
+
+  constructor(
+    roleCategories: RoleCategories,
+    directoryData: DirectoryData | null = null,
+    archiveFilter: ArchiveFilter = {},
+  ) {
     super('ROLE_LIST_AREA')
     this.roleCategories = roleCategories
     this.directoryData = directoryData || { roles: [], organizations: [] }
@@ -21,7 +61,7 @@ class RoleListArea extends BaseArea {
     }
   }
 
-  async render() {
+  async render(): Promise<string> {
     let content = ''
 
     // 渲染各个来源的角色
@@ -33,10 +73,10 @@ class RoleListArea extends BaseArea {
 
       content += `\n${sourceIcon} **${sourceTitle}** (${roles.length}个)\n`
 
-      // 按ID排序
+      // 按 ID 排序
       roles.sort((a, b) => a.id.localeCompare(b.id))
 
-      roles.forEach(role => {
+      for (const role of roles) {
         const archiveTag = role.archived ? '⚠️ [已归档] ' : ''
         if (role.version === 'v2') {
           const command = `action({ operation: "activate", role: "${role.id}" })`
@@ -50,7 +90,7 @@ class RoleListArea extends BaseArea {
           const command = `action("${role.id}")`
           content += `- ${archiveTag}\`${role.id}\`: ${role.name || role.title || '未命名角色'} → ${command}\n`
         }
-      })
+      }
     }
 
     // KNUTH-FEAT 2026-07-04: onlyArchived 时加顶提示
@@ -65,43 +105,43 @@ class RoleListArea extends BaseArea {
 
   /**
    * 获取角色的组织和岗位信息
-   * @param {string} roleId - 角色ID
-   * @returns {Object|null} { org: string, position: string } 或 null
+   * @param roleId 角色 ID
+   * @returns { org, position } 或 null
    */
-  getOrganizationInfo(roleId) {
+  getOrganizationInfo(roleId: string): OrganizationInfo | null {
     if (!this.directoryData || !this.directoryData.roles) {
       return null
     }
 
-    const roleData = this.directoryData.roles.find(r => r.name === roleId)
+    const roleData = this.directoryData.roles.find((r) => r.name === roleId)
     if (roleData && roleData.org && roleData.position) {
       return {
         org: roleData.org,
-        position: roleData.position
+        position: roleData.position,
       }
     }
     return null
   }
 
-  getSourceIcon(source) {
-    const icons = {
-      'system': '📦',
-      'project': '🏗️',
-      'user': '👤',
-      'rolex': '🎭'
+  private getSourceIcon(source: string): string {
+    const icons: Record<string, string> = {
+      system: '📦',
+      project: '🏗️',
+      user: '👤',
+      rolex: '🎭',
     }
     return icons[source] || '📄'
   }
 
-  getSourceTitle(source) {
-    const titles = {
-      'system': '系统角色',
-      'project': '项目角色',
-      'user': '用户角色',
-      'rolex': 'V2角色 (RoleX)'
+  private getSourceTitle(source: string): string {
+    const titles: Record<string, string> = {
+      system: '系统角色',
+      project: '项目角色',
+      user: '用户角色',
+      rolex: 'V2角色 (RoleX)',
     }
     return titles[source] || '其他角色'
   }
 }
 
-module.exports = RoleListArea
+export default RoleListArea

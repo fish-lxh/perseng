@@ -1,22 +1,58 @@
-const BaseArea = require('../BaseArea')
-
 /**
  * ProjectArea - 项目信息展示区域
+ *
+ * P0 step 0B.4.2: 迁 .js → .ts, BaseArea 已在 .ts
  */
-class ProjectArea extends BaseArea {
-  constructor(projectInfo) {
+
+import { BaseArea } from '../BaseArea.js'
+
+/** 项目配置（render 用到的字段） */
+export interface ProjectConfig {
+  mcpId: string
+  ideType: string
+  projectPath: string
+  resourcesDiscovered: number
+}
+
+/** 注册表统计（render 用到的字段） */
+export interface RegistryStats {
+  message: string
+  totalResources: number
+}
+
+/** projectInfo 输入（render 用到的字段） */
+export interface ProjectInfo {
+  version: string
+  projectConfig: ProjectConfig
+  registryStats: RegistryStats
+  configFileName: string
+  isProjectMode: boolean
+  error?: ProjectError
+}
+
+/** projectInfo.error 错误对象 */
+export interface ProjectError {
+  type: 'not_exists' | 'not_directory' | 'is_home' | 'access_error' | string
+  path?: string
+  message: string
+}
+
+export class ProjectArea extends BaseArea {
+  private projectInfo: ProjectInfo
+
+  constructor(projectInfo: ProjectInfo) {
     super('PROJECT_AREA')
     this.projectInfo = projectInfo
   }
 
-  async render() {
+  async render(): Promise<string> {
     const {
       version,
       projectConfig,
       registryStats,
       configFileName,
       isProjectMode,
-      error
+      error,
     } = this.projectInfo
 
     // 如果有错误，显示错误信息
@@ -64,38 +100,38 @@ ${projectConfig.resourcesDiscovered > 0 ? `✅ 已发现 **${projectConfig.resou
 
   /**
    * 渲染错误信息
-   * @param {Object} error - 错误对象
-   * @returns {string} 格式化的错误信息
+   * @param error 错误对象
+   * @returns 格式化的错误信息
    */
-  renderError(error) {
+  renderError(error: ProjectError): string {
     const { type, path, message } = error
 
     // 根据错误类型生成建议
-    let suggestions = []
+    let suggestions: string[] = []
     switch (type) {
       case 'not_exists':
         suggestions = [
           '检查路径拼写是否正确',
           '确认目录确实存在',
-          '可以先用 ls 或 pwd 命令确认当前位置'
+          '可以先用 ls 或 pwd 命令确认当前位置',
         ]
         break
       case 'not_directory':
         suggestions = [
           '提供项目的根目录，而不是文件路径',
-          '示例：使用 /path/to/project 而不是 /path/to/project/file.txt'
+          '示例：使用 /path/to/project 而不是 /path/to/project/file.txt',
         ]
         break
       case 'is_home':
         suggestions = [
           '请选择一个具体的项目文件夹',
-          '建议在 ~/projects 或 ~/workspace 下创建项目'
+          '建议在 ~/projects 或 ~/workspace 下创建项目',
         ]
         break
       case 'access_error':
         suggestions = [
-          '检查目录权限设置',
-          '尝试使用有权限的目录'
+          '检查目录设置权限',
+          '尝试使用有权限的目录',
         ]
         break
       default:
@@ -128,4 +164,4 @@ project("/Users/yourname/projects/myproject")
   }
 }
 
-module.exports = ProjectArea
+export default ProjectArea

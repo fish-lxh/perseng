@@ -1,11 +1,55 @@
-const BaseArea = require('../BaseArea')
-
 /**
  * RoleArea - 角色定义区域
  * 负责渲染角色相关内容：人格特征、行为原则、专业知识
+ *
+ * P0 step 0B.4.2: 迁 .js → .ts.
+ * semanticRenderer / resourceManager 是 dpml + resource 模块依赖（仍 .js）,
+ * 这里用鸭子类型描述契约，避免硬依赖具体类型。
  */
-class RoleArea extends BaseArea {
-  constructor(roleId, roleSemantics, semanticRenderer, resourceManager, thoughts, executions, roleName, sectionFilter) {
+
+import { BaseArea } from '../BaseArea.js'
+
+/** 角色语义的字段（personality/principle/knowledge 是 DPMLDocument） */
+export interface RoleSemantics {
+  personality?: unknown
+  principle?: unknown
+  knowledge?: unknown
+  [key: string]: unknown
+}
+
+/** SemanticRenderer 鸭子类型（仅 renderSemanticContent 契约） */
+export interface SemanticRendererLike {
+  renderSemanticContent(content: unknown, resourceManager: ResourceManagerLike): Promise<string>
+}
+
+/** ResourceManager 鸭子类型 */
+export interface ResourceManagerLike {
+  [key: string]: unknown
+}
+
+/** sectionFilter 取值 */
+export type SectionFilter = 'personality' | 'principle' | 'knowledge' | 'all' | undefined
+
+export class RoleArea extends BaseArea {
+  private roleId: string
+  private roleName: string
+  private roleSemantics: RoleSemantics
+  private semanticRenderer: SemanticRendererLike
+  private resourceManager: ResourceManagerLike
+  private thoughts: unknown[]
+  private executions: unknown[]
+  private sectionFilter: SectionFilter
+
+  constructor(
+    roleId: string,
+    roleSemantics: RoleSemantics,
+    semanticRenderer: SemanticRendererLike,
+    resourceManager: ResourceManagerLike,
+    thoughts: unknown[] = [],
+    executions: unknown[] = [],
+    roleName?: string,
+    sectionFilter?: SectionFilter,
+  ) {
     super('ROLE_AREA')
     this.roleId = roleId
     this.roleName = roleName || roleId
@@ -21,7 +65,7 @@ class RoleArea extends BaseArea {
   /**
    * 渲染角色区域内容
    */
-  async render() {
+  async render(): Promise<string> {
     let content = ''
 
     const filter = this.sectionFilter
@@ -30,16 +74,21 @@ class RoleArea extends BaseArea {
     const loadKnowledge = filter === 'knowledge' || filter === 'all'
 
     // 角色激活标题
-    const loaded = []
+    const loaded: string[] = []
     if (loadPersonality) loaded.push('人格特征')
     if (loadPrinciple) loaded.push('行为原则')
     if (loadKnowledge) loaded.push('专业知识')
     content += `🎭 **角色激活：\`${this.roleId}\` (${this.roleName})** - 已加载：${loaded.join('、')}\n`
 
     // 提示可按需加载的部分
-    const hints = []
-    if (!loadPrinciple && this.roleSemantics?.principle) hints.push('执行工具或任务前，先加载「行为原则」获取工作流和方法论：roleResources: "principle"')
-    if (!loadKnowledge && this.roleSemantics?.knowledge) hints.push('遇到不确定的专业问题时，先加载「专业知识」获取领域知识：roleResources: "knowledge"')
+    const hints: string[] = []
+    const semanticsAny = this.roleSemantics as unknown as Record<string, unknown>
+    if (!loadPrinciple && semanticsAny.principle) {
+      hints.push('执行工具或任务前，先加载「行为原则」获取工作流和方法论：roleResources: "principle"')
+    }
+    if (!loadKnowledge && semanticsAny.knowledge) {
+      hints.push('遇到不确定的专业问题时，先加载「专业知识」获取领域知识：roleResources: "knowledge"')
+    }
     if (hints.length > 0) {
       content += `💡 按需加载提示：\n`
       for (const hint of hints) {
@@ -81,109 +130,111 @@ class RoleArea extends BaseArea {
   /**
    * 渲染人格特征
    */
-  async renderPersonality() {
-    if (!this.roleSemantics?.personality) {
+  private async renderPersonality(): Promise<string> {
+    const semanticsAny = this.roleSemantics as unknown as Record<string, unknown>
+    if (!semanticsAny.personality) {
       return ''
     }
-    
+
     let content = '# 👤 角色人格特征\n'
 
     const rendered = await this.semanticRenderer.renderSemanticContent(
-      this.roleSemantics.personality,
-      this.resourceManager
+      semanticsAny.personality,
+      this.resourceManager,
     )
-
     content += rendered
-    
+
     // 添加思维资源
     if (this.thoughts.length > 0) {
       content += '\n---\n'
       for (const thought of this.thoughts) {
         const thoughtContent = await this.semanticRenderer.renderSemanticContent(
           thought,
-          this.resourceManager
+          this.resourceManager,
         )
         if (thoughtContent) {
           content += thoughtContent + '\n'
         }
       }
     }
-    
+
     return content
   }
 
   /**
    * 渲染行为原则
    */
-  async renderPrinciple() {
-    if (!this.roleSemantics?.principle) {
+  private async renderPrinciple(): Promise<string> {
+    const semanticsAny = this.roleSemantics as unknown as Record<string, unknown>
+    if (!semanticsAny.principle) {
       return ''
     }
-    
+
     let content = '# ⚖️ 角色行为原则\n'
 
     const rendered = await this.semanticRenderer.renderSemanticContent(
-      this.roleSemantics.principle,
-      this.resourceManager
+      semanticsAny.principle,
+      this.resourceManager,
     )
-
     content += rendered
-    
+
     // 添加执行资源
     if (this.executions.length > 0) {
       content += '\n---\n'
       for (const execution of this.executions) {
         const execContent = await this.semanticRenderer.renderSemanticContent(
           execution,
-          this.resourceManager
+          this.resourceManager,
         )
         if (execContent) {
           content += execContent + '\n'
         }
       }
     }
-    
+
     return content
   }
 
   /**
    * 渲染专业知识
    */
-  async renderKnowledge() {
-    if (!this.roleSemantics?.knowledge) {
+  private async renderKnowledge(): Promise<string> {
+    const semanticsAny = this.roleSemantics as unknown as Record<string, unknown>
+    if (!semanticsAny.knowledge) {
       return ''
     }
-    
+
     let content = '# 📚 专业知识体系\n'
 
     const rendered = await this.semanticRenderer.renderSemanticContent(
-      this.roleSemantics.knowledge,
-      this.resourceManager
+      semanticsAny.knowledge,
+      this.resourceManager,
     )
-
     content += rendered
-    
+
     return content
   }
 
   /**
    * 渲染激活总结
    */
-  renderSummary() {
+  private renderSummary(): string {
     const filter = this.sectionFilter
     const loadPersonality = !filter || filter === 'personality' || filter === 'all'
     const loadPrinciple = filter === 'principle' || filter === 'all'
     const loadKnowledge = filter === 'knowledge' || filter === 'all'
+
+    const semanticsAny = this.roleSemantics as unknown as Record<string, unknown>
 
     let content = '---\n'
     content += '# 🎯 角色激活总结\n'
     content += `✅ **\`${this.roleId}\` 角色已激活**\n`
     content += '📋 **已加载能力**：\n'
 
-    const components = []
-    if (loadPersonality && this.roleSemantics?.personality) components.push('👤 人格特征')
-    if (loadPrinciple && this.roleSemantics?.principle) components.push('⚖️ 行为原则')
-    if (loadKnowledge && this.roleSemantics?.knowledge) components.push('📚 专业知识')
+    const components: string[] = []
+    if (loadPersonality && semanticsAny.personality) components.push('👤 人格特征')
+    if (loadPrinciple && semanticsAny.principle) components.push('⚖️ 行为原则')
+    if (loadKnowledge && semanticsAny.knowledge) components.push('📚 专业知识')
 
     content += `- 🎭 角色组件：${components.join(', ')}\n`
 
@@ -201,4 +252,4 @@ class RoleArea extends BaseArea {
   }
 }
 
-module.exports = RoleArea
+export default RoleArea
