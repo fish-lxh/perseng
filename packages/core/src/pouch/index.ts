@@ -37,13 +37,13 @@ interface BasePouchCommandClass {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const PouchCLI = require('./PouchCLI') as unknown as PouchCLIClass
+const { default: PouchCLI } = require('./PouchCLI') as unknown as { default: PouchCLIClass }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const PouchRegistry = require('./PouchRegistry') as unknown as PouchRegistryClass
+const { default: PouchRegistry } = require('./PouchRegistry') as unknown as { default: PouchRegistryClass }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const PouchStateMachine = require('./state/PouchStateMachine') as unknown as PouchStateMachineClass
+const { default: PouchStateMachine } = require('./state/PouchStateMachine') as unknown as { default: PouchStateMachineClass }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const BasePouchCommand = require('./BasePouchCommand') as unknown as BasePouchCommandClass
+const { default: BasePouchCommand } = require('./BasePouchCommand') as unknown as { default: BasePouchCommandClass }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const commands = require('./commands/index')
 

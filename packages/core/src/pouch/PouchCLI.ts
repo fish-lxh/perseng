@@ -12,9 +12,9 @@
 import * as logger from '@promptx/logger'
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const PouchStateMachine = require('./state/PouchStateMachine') as unknown as PouchStateMachineClass
+const { default: PouchStateMachine } = require('./state/PouchStateMachine') as unknown as { default: PouchStateMachineClass }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const PouchRegistry = require('./PouchRegistry') as unknown as PouchRegistryClass
+const { default: PouchRegistry } = require('./PouchRegistry') as unknown as { default: PouchRegistryClass }
 
 /** PouchStateMachine 构造器类型 (本地 interface, 不引用 import path) */
 interface PouchStateMachineClass {

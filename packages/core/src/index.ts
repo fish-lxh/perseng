@@ -63,3 +63,24 @@ export default {
   ...utils,
   ...project,
 }
+
+// KNUTH-FIX 2026-07-08: 顶层 named re-export —— 之前 `export default` 让
+// tsup CJS 输出为 { default: {...} }, 消费方 `const core = require('@promptx/core')`
+// 拿到的 .pouch / .rolex / .ProjectPathResolver 全是 undefined (都在 default 里面)。
+// 加 named export 后 tsup 会在 module.exports 上同时挂出 cognition/pouch/rolex/
+// utils 等命名属性, 兼容 require 模式消费 (PersengResourceRepository, ResourceListWindow 等)。
+// 注意: export default 里有 ...utils, ...project 把 ProjectPathResolver/ProjectManager
+// spread 到 default 顶层; 这里也要把常用的 Project 类单独 re-export, 兼容
+// `const { ProjectPathResolver } = require('@promptx/core')` 的解构用法。
+export const ProjectManager = project.ProjectManager
+export const ProjectPathResolver = project.ProjectPathResolver
+export const ProjectConfig = project.ProjectConfig
+export {
+  cognition,
+  resource,
+  toolx,
+  pouch,
+  project,
+  rolex,
+  utils,
+}

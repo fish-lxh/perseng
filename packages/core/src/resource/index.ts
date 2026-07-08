@@ -114,3 +114,25 @@ export default {
     }
   },
 }
+
+// KNUTH-FIX 2026-07-08: 顶层 named re-export —— 之前只有 export default,
+// tsup CJS 输出 module.exports = { default: {...} }, 消费方
+// const { getGlobalResourceManager } = require('../../resource')
+// 解出来是 undefined (在 default 里面)。加 named export 后 tsup 同步挂出
+// 命名属性, 兼容 pouch/commands/* 的 destructure 模式。
+export {
+  ResourceManager,
+  ResourceProtocolParser,
+  RoleLifecycle,
+  getGlobalResourceManager,
+  resetGlobalResourceManager,
+  LoadingSemantics,
+  ParsedReference,
+  QueryParams,
+  NestedReference,
+  ResourceContent,
+  LazyResource,
+  ProcessedResult,
+  ResourceResult,
+  ProtocolInfo,
+}

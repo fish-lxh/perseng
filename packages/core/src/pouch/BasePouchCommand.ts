@@ -49,11 +49,11 @@ interface LegacyAreaClass {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const BaseArea = require('./areas/BaseArea') as unknown as BaseAreaClass
+const { default: BaseArea } = require('./areas/BaseArea') as unknown as { default: BaseAreaClass }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const LegacyArea = require('./areas/common/LegacyArea') as unknown as LegacyAreaClass
+const { default: LegacyArea } = require('./areas/common/LegacyArea') as unknown as { default: LegacyAreaClass }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const BaseLayer = require('./layers/BaseLayer') as unknown as BaseLayerClass
+const { default: BaseLayer } = require('./layers/BaseLayer') as unknown as { default: BaseLayerClass }
 
 /** Area 鸭子类型（BaseArea 契约 + 允许子类的 const+require 实例） */
 export interface AreaLike {

@@ -6,21 +6,21 @@
  */
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const ProjectCommand = require('./ProjectCommand')
+const { default: ProjectCommand } = require('./ProjectCommand') as { default: unknown }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const DiscoverCommand = require('./DiscoverCommand')
+const { default: DiscoverCommand } = require('./DiscoverCommand') as { default: unknown }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const ActionCommand = require('./ActionCommand')
+const { default: ActionCommand } = require('./ActionCommand') as { default: unknown }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const LearnCommand = require('./LearnCommand')
+const { default: LearnCommand } = require('./LearnCommand') as { default: unknown }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const RecallCommand = require('./RecallCommand')
+const { default: RecallCommand } = require('./RecallCommand') as { default: unknown }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const RememberCommand = require('./RememberCommand')
+const { default: RememberCommand } = require('./RememberCommand') as { default: unknown }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const ThinkCommand = require('./ThinkCommand')
+const { default: ThinkCommand } = require('./ThinkCommand') as { default: unknown }
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const ToolCommand = require('./ToolCommand')
+const { default: ToolCommand } = require('./ToolCommand') as { default: unknown }
 
 export {
   ProjectCommand,
