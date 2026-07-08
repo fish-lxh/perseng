@@ -21,11 +21,13 @@ export interface RegistryStats {
 }
 
 /** projectInfo 输入（render 用到的字段） */
+// KNUTH-FIX 0B.4.3: isProjectMode=false 时不需要 projectConfig/registryStats/configFileName/version
+// 这些都设 optional 避免调用方传 { isProjectMode: false } 还要补全所有字段.
 export interface ProjectInfo {
-  version: string
-  projectConfig: ProjectConfig
-  registryStats: RegistryStats
-  configFileName: string
+  version?: string
+  projectConfig?: ProjectConfig
+  registryStats?: RegistryStats
+  configFileName?: string
   isProjectMode: boolean
   error?: ProjectError
 }
@@ -46,14 +48,13 @@ export class ProjectArea extends BaseArea {
   }
 
   async render(): Promise<string> {
-    const {
-      version,
-      projectConfig,
-      registryStats,
-      configFileName,
-      isProjectMode,
-      error,
-    } = this.projectInfo
+    const info = this.projectInfo
+    const version = info.version ?? ''
+    const projectConfig = info.projectConfig ?? { mcpId: '', ideType: '', projectPath: '', resourcesDiscovered: 0 }
+    const registryStats = info.registryStats ?? { message: '', totalResources: 0 }
+    const configFileName = info.configFileName ?? ''
+    const isProjectMode = info.isProjectMode
+    const error = info.error
 
     // 如果有错误，显示错误信息
     if (error) {

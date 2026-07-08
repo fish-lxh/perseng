@@ -2,16 +2,11 @@
  * LegacyArea - 兼容旧命令的 Area
  * 用于包装旧的 getPurpose/getContent 输出
  *
- * P0 step 0B.4.1: 迁 .js → .ts. BaseArea 仍在 .js（0B.4.2 迁）,
- * 用 const+require 模式避免 apps/cli TS6059 rootDir。
+ * P0 step 0B.4.1: 迁 .js → .ts.
+ * 0B.4.3: BaseArea 已在 .ts, 改用正式 ESM import.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const BaseArea = require('../BaseArea') as unknown as new (name: string) => {
-  render(): Promise<string>
-  format(content: string): string
-  getName(): string
-}
+import { BaseArea } from '../BaseArea.js'
 
 /** PATEOAS 导航片段（仅取 render 用到的字段） */
 interface LegacyPateoas {

@@ -1,18 +1,13 @@
 /**
  * ToolListArea - 工具列表展示区域
  *
- * P0 step 0B.4.1: 迁 .js → .ts. BaseArea 仍在 .js（0B.4.2 迁）,
- * 用 const+require 模式。
- *
+ * P0 step 0B.4.1: 迁 .js → .ts.
+ * 0B.4.3: BaseArea 已在 .ts, 改用正式 ESM import.
  * 原 .js 引用了 logger 但实际未调用（dead import），迁到 .ts 时清理掉
  * （strict noUnusedLocals 会触发错误，不如源头删干净）。
  */
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const BaseArea = require('../BaseArea') as unknown as new (name: string) => {
-  render(): Promise<string>
-  getName(): string
-}
+import { BaseArea } from '../BaseArea.js'
 
 /** 工具条目（仅取渲染用到的字段） */
 export interface ToolEntry {

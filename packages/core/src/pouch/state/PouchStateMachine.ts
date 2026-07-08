@@ -35,7 +35,8 @@ interface StateMachineCommand {
 }
 
 /** command.execute 的返回类型（仅取 machine 用到的字段） */
-interface CommandResult {
+// KNUTH-FIX 0B.4.3: 导出给 PouchRegistry 用, 让 PouchCommandLike.execute 签名兼容
+export interface CommandResult {
   pateoas?: CommandPateoas
   [key: string]: unknown
 }

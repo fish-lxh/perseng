@@ -1,15 +1,11 @@
 /**
  * DiscoverHeaderArea - 发现信息头部区域
  *
- * P0 step 0B.4.1: 迁 .js → .ts. BaseArea 仍在 .js（0B.4.2 迁）,
- * 用 const+require 模式。
+ * P0 step 0B.4.1: 迁 .js → .ts.
+ * 0B.4.3: BaseArea 已在 .ts, 改用正式 ESM import.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const BaseArea = require('../BaseArea') as unknown as new (name: string) => {
-  render(): Promise<string>
-  getName(): string
-}
+import { BaseArea } from '../BaseArea.js'
 
 /** DiscoverHeaderArea 用的 stats 形状（仅取渲染用到的字段） */
 export interface DiscoverStats {
@@ -17,6 +13,7 @@ export interface DiscoverStats {
   systemRoles: number
   projectRoles: number
   userRoles: number
+  rolexRoles: number
   totalTools: number
   systemTools: number
   projectTools: number

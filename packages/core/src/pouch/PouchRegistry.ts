@@ -3,12 +3,28 @@
  * 负责管理和注册所有锦囊命令
  *
  * P0 step 0B.4.1: 迁 .js → .ts, 给 BasePouchCommand 类型一个轻量的鸭子类型
+ *
+ * KNUTH-FIX 0B.4.3: 不 import type StateContextData (避免引用 import path 触发
+ * apps/cli TS6059). 用本地 interface 代替.
  */
 
+/** StateContextData 本地镜像 (与 state/PouchStateMachine.StateContextData 同形) */
+interface StateContextData {
+  currentState: string
+  history: string[]
+  userProfile: Record<string, unknown>
+  sessionData: Record<string, unknown>
+  domainContext: Record<string, unknown>
+  [key: string]: unknown
+}
+
 /** 命令鸭子类型：PouchRegistry 不依赖具体命令类，只在乎 execute() 契约。 */
+// KNUTH-FIX 0B.4.3: 加 setContext 兼容 PouchStateMachine 的 StateMachineCommand 契约
+// (BasePouchCommand 已实现 setContext, 全部 command 子类都有, 所以设为 required)
 export interface PouchCommandLike {
   execute(args?: unknown[]): Promise<unknown>
   getPurpose?(): string
+  setContext(context: StateContextData): void
 }
 
 export interface PouchCommandDetails {

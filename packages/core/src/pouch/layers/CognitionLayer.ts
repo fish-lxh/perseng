@@ -185,7 +185,7 @@ export class CognitionLayer extends BaseLayer {
   /**
    * 静态工厂方法：创建 Prime 操作的认知层
    */
-  static createForPrime(mind: MindLike, roleId: string): CognitionLayer {
+  static createForPrime(mind: MindLike | null, roleId: string): CognitionLayer {
     return new CognitionLayer({
       operationType: 'prime',
       mind,
@@ -196,7 +196,7 @@ export class CognitionLayer extends BaseLayer {
   /**
    * 静态工厂方法：创建 Recall 操作的认知层
    */
-  static createForRecall(mind: MindLike, roleId: string, query: string): CognitionLayer {
+  static createForRecall(mind: MindLike | null, roleId: string, query: string): CognitionLayer {
     return new CognitionLayer({
       operationType: 'recall',
       mind,
@@ -208,7 +208,7 @@ export class CognitionLayer extends BaseLayer {
   /**
    * 静态工厂方法：创建 Remember 操作的认知层
    */
-  static createForRemember(mind: MindLike, roleId: string, engramCount: number): CognitionLayer {
+  static createForRemember(mind: MindLike | null, roleId: string, engramCount: number): CognitionLayer {
     return new CognitionLayer({
       operationType: 'remember',
       mind,

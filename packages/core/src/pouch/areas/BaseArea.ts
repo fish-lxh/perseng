@@ -22,6 +22,7 @@ export interface BaseAreaMetadata {
   name: string
   type: string
   options: BaseAreaOptions
+  [key: string]: unknown
 }
 
 export class BaseArea {

@@ -1,31 +1,129 @@
-const BasePouchCommand = require('../BasePouchCommand')
-const DiscoverHeaderArea = require('../areas/discover/DiscoverHeaderArea')
-const RoleListArea = require('../areas/discover/RoleListArea')
-const ToolListArea = require('../areas/discover/ToolListArea')
-const StateArea = require('../areas/common/StateArea')
-const fs = require('fs-extra')
-const path = require('path')
-const os = require('os')
-const { getGlobalResourceManager } = require('../../resource')
-// KNUTH-FIX 2026-07-05: RoleLifecycle.js 用 `module.exports = RoleLifecycle` 直接导出 class，
-// 不能用 `{ RoleLifecycle }` 解构（拆出来是 undefined），必须直接 require。
-// 详情见 role-lifecycle-import-bug 排查笔记。
-const RoleLifecycle = require('../../resource/lifecycle/RoleLifecycle')
-const ProjectManager = require('~/project/ProjectManager')
-const { getGlobalProjectManager } = require('~/project/ProjectManager')
-const ProjectDiscovery = require('../../project/ProjectDiscovery')
-const UserDiscovery = require('../../resource/discovery/UserDiscovery')
-const { getRolexBridge } = require('../../rolex/RolexBridge')
-const { parseDiscoverOptions } = require('./discoverOptions')
-const logger = require('@promptx/logger')
-
 /**
  * 发现命令
  * 负责展示可用的AI角色和工具
  * 使用Area架构组装输出
+ *
+ * P0 step 0B.4.3: 迁 .js → .ts. BasePouchCommand / DiscoverHeaderArea / RoleListArea /
+ * ToolListArea / StateArea / discoverOptions 已 .ts;
+ * resource/ / project/ / rolex/RolexBridge 仍 .js, 走 const+require.
  */
-class DiscoverCommand extends BasePouchCommand {
-  constructor () {
+
+import { BasePouchCommand } from '../BasePouchCommand.js'
+import { DiscoverHeaderArea, type DiscoverStats } from '../areas/discover/DiscoverHeaderArea.js'
+import { RoleListArea, type DirectoryData, type ArchiveFilter } from '../areas/discover/RoleListArea.js'
+import { ToolListArea } from '../areas/discover/ToolListArea.js'
+import { StateArea } from '../areas/common/StateArea.js'
+import { parseDiscoverOptions } from './discoverOptions.js'
+import * as logger from '@promptx/logger'
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { getGlobalResourceManager } = require('../../resource') as {
+  getGlobalResourceManager(): ResourceManagerLike
+}
+// KNUTH-FIX 2026-07-05: RoleLifecycle.js 用 `module.exports = RoleLifecycle` 直接导出 class，
+// 不能用 `{ RoleLifecycle }` 解构（拆出来是 undefined），必须直接 require。
+// 详情见 role-lifecycle-import-bug 排查笔记。
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const RoleLifecycle = require('../../resource/lifecycle/RoleLifecycle') as unknown as RoleLifecycleLike
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ProjectManager = require('~/project/ProjectManager') as unknown as ProjectManagerLike
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { getGlobalProjectManager } = require('~/project/ProjectManager') as {
+  getGlobalProjectManager(): ProjectManagerLike
+}
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ProjectDiscovery = require('../../project/ProjectDiscovery') as unknown as new () => ProjectDiscoveryLike
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const UserDiscovery = require('../../resource/discovery/UserDiscovery') as unknown as new () => UserDiscoveryLike
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { getRolexBridge } = require('../../rolex/RolexBridge') as {
+  getRolexBridge(): RolexBridgeLike
+}
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const fs = require('fs-extra') as typeof import('fs-extra')
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const path = require('path') as typeof import('path')
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const os = require('os') as typeof import('os')
+
+/** ResourceManager 鸭子类型 */
+interface ResourceManagerLike {
+  initialized: boolean
+  initializeWithNewArchitecture(): Promise<void>
+  registryData: RegistryDataLike
+  [key: string]: unknown
+}
+
+/** RegistryData 鸭子类型（仅 getResourcesByProtocol） */
+interface RegistryDataLike {
+  getResourcesByProtocol(protocol: string): Array<{
+    id: string
+    protocol: string
+    source?: string
+    archived?: boolean
+    [key: string]: unknown
+  }>
+}
+
+/** RoleLifecycle 鸭子类型（仅 listArchivedV1） */
+interface RoleLifecycleLike {
+  listArchivedV1(): Promise<string[]>
+}
+
+/** ProjectManager 鸭子类型 */
+interface ProjectManagerLike {
+  getCurrentProject(): { initialized: boolean } | null
+  getCurrentMcpId(): string
+  detectIdeType(): string
+  [key: string]: unknown
+}
+
+/** ProjectDiscovery 鸭子类型 */
+interface ProjectDiscoveryLike {
+  generateRegistry(): Promise<unknown>
+}
+
+/** UserDiscovery 鸭子类型 */
+interface UserDiscoveryLike {
+  generateRegistry(): Promise<unknown>
+}
+
+/** RolexBridge 鸭子类型 */
+interface RolexBridgeLike {
+  listV2Roles(opts?: { includeRetired?: boolean }): Promise<
+    Array<{ id: string; source?: string; archived?: boolean; [k: string]: unknown }>
+  >
+  listRetiredV2(): Promise<
+    Array<{ id: string; source?: string; archived?: boolean; [k: string]: unknown }>
+  >
+  directory(): Promise<DirectoryData>
+  isV2Role(roleId: string): Promise<boolean>
+}
+
+/** 角色条目 */
+interface RoleEntry {
+  id: string
+  source?: string
+  version?: string
+  archived?: boolean
+  [key: string]: unknown
+}
+
+/** 工具条目 */
+interface ToolEntry {
+  id: string
+  source?: string
+  [key: string]: unknown
+}
+
+/** 来源类型 */
+type SourceCategory = 'system' | 'project' | 'user' | 'rolex'
+
+export class DiscoverCommand extends BasePouchCommand {
+  private resourceManager: ResourceManagerLike
+  private projectManager: ProjectManagerLike
+
+  constructor() {
     super()
     // 使用全局单例 ResourceManager
     this.resourceManager = getGlobalResourceManager()
@@ -35,9 +133,9 @@ class DiscoverCommand extends BasePouchCommand {
   /**
    * 组装Areas
    */
-  async assembleAreas(args) {
+  async assembleAreas(args: unknown[] = []): Promise<void> {
     // KNUTH-FEAT 2026-07-04: 解析 --all / --include-archived / --archived 三参
-    const opts = parseDiscoverOptions(args)
+    const opts = parseDiscoverOptions(args as string[])
     const showArchived = opts.all || opts.includeArchived
     const onlyArchived = opts.archived
 
@@ -52,8 +150,8 @@ class DiscoverCommand extends BasePouchCommand {
     const directoryData = await this.loadDirectoryData()
 
     // 按来源分组
-    const roleCategories = this.categorizeBySource(roleRegistry)
-    const toolCategories = this.categorizeBySource(toolRegistry)
+    const roleCategories = this.categorizeBySource<RoleEntry>(roleRegistry)
+    const toolCategories = this.categorizeBySource<ToolEntry>(toolRegistry)
 
     // 统计信息
     const stats = this.calculateStats(roleCategories, toolCategories)
@@ -62,7 +160,10 @@ class DiscoverCommand extends BasePouchCommand {
     const headerArea = new DiscoverHeaderArea(stats)
     this.registerArea(headerArea)
 
-    const roleArea = new RoleListArea(roleCategories, directoryData, { showArchived, onlyArchived })
+    const roleArea = new RoleListArea(roleCategories, directoryData, {
+      showArchived,
+      onlyArchived,
+    } as ArchiveFilter)
     this.registerArea(roleArea)
 
     const toolArea = new ToolListArea(toolCategories)
@@ -71,52 +172,52 @@ class DiscoverCommand extends BasePouchCommand {
     const stateArea = new StateArea('discover_completed')
     this.registerArea(stateArea)
   }
-  
+
   /**
    * 按来源分组资源
    */
-  categorizeBySource(registry) {
-    const logger = require('@promptx/logger')
-    const categories = {
+  categorizeBySource<T extends { source?: string }>(registry: Record<string, T>): Record<SourceCategory, T[]> {
+    const categories: Record<SourceCategory, T[]> = {
       system: [],
       project: [],
       user: [],
-      rolex: []
+      rolex: [],
     }
-    
+
     const items = Object.values(registry)
     logger.info(`[DiscoverCommand] Starting to categorize ${items.length} resources`)
-    
+
     // 统计各种 source 值
-    const sourceCounts = {}
-    items.forEach(item => {
+    const sourceCounts: Record<string, number> = {}
+    items.forEach((item) => {
       const src = item.source || 'undefined'
       sourceCounts[src] = (sourceCounts[src] || 0) + 1
     })
     logger.info(`[DiscoverCommand] Original source distribution: ${JSON.stringify(sourceCounts)}`)
-    
-    items.forEach(item => {
+
+    items.forEach((item) => {
       const source = this.normalizeSource(item.source)
       if (categories[source]) {
         categories[source].push(item)
       }
     })
-    
-    logger.info(`[DiscoverCommand] Categorization result: system=${categories.system.length}, project=${categories.project.length}, user=${categories.user.length}`)
-    
+
+    logger.info(
+      `[DiscoverCommand] Categorization result: system=${categories.system.length}, project=${categories.project.length}, user=${categories.user.length}`,
+    )
+
     return categories
   }
-  
+
   /**
    * 标准化来源
    */
-  normalizeSource(source) {
-    const logger = require('@promptx/logger')
+  normalizeSource(source: string | undefined): SourceCategory {
     logger.info(`[DiscoverCommand] normalizeSource input: "${source}" (type: ${typeof source})`)
-    
+
     // 转换为小写进行比较
-    const lowerSource = String(source).toLowerCase()
-    
+    const lowerSource = String(source ?? '').toLowerCase()
+
     if (lowerSource === 'user') return 'user'
     if (lowerSource === 'project') return 'project'
     if (lowerSource === 'rolex') return 'rolex'
@@ -127,11 +228,14 @@ class DiscoverCommand extends BasePouchCommand {
     logger.info(`[DiscoverCommand] normalizeSource: "${source}" -> "system" (default)`)
     return 'system'
   }
-  
+
   /**
    * 计算统计信息
    */
-  calculateStats(roleCategories, toolCategories) {
+  calculateStats(
+    roleCategories: Record<SourceCategory, unknown[]>,
+    toolCategories: Record<SourceCategory, unknown[]>,
+  ): DiscoverStats {
     const systemRoles = roleCategories.system?.length || 0
     const projectRoles = roleCategories.project?.length || 0
     const userRoles = roleCategories.user?.length || 0
@@ -149,52 +253,47 @@ class DiscoverCommand extends BasePouchCommand {
       totalTools: systemTools + projectTools + userTools,
       systemTools,
       projectTools,
-      userTools
+      userTools,
     }
   }
 
   /**
    * 刷新所有资源（注册表文件 + ResourceManager）
-   * 这是 discover 命令的核心功能，确保能发现所有最新的资源
    */
-  async refreshAllResources() {
+  async refreshAllResources(): Promise<void> {
     try {
       // 1. 刷新注册表文件
       await this.refreshAllRegistries()
-      
+
       // 🔍 Knuth调试：验证注册表文件更新
-      const fs = require('fs-extra')
-      const userRegistryPath = require('os').homedir() + '/.perseng/resource/user.registry.json'
+      const userRegistryPath = path.join(os.homedir(), '.perseng/resource/user.registry.json')
       if (await fs.pathExists(userRegistryPath)) {
-        const registry = await fs.readJson(userRegistryPath)
-        const tools = registry.resources?.filter(r => r.protocol === 'tool').map(r => r.id) || []
+        const registry = (await fs.readJson(userRegistryPath)) as { resources?: Array<{ protocol: string; id: string }> }
+        const tools = registry.resources?.filter((r) => r.protocol === 'tool').map((r) => r.id) || []
         logger.info(`[DiscoverCommand] Tools in user registry: ${tools.join(', ') || 'none'}`)
       }
-      
+
       // 2. 刷新 ResourceManager，重新加载所有资源
       logger.info('[DiscoverCommand] Refreshing ResourceManager to discover new resources...')
       await this.resourceManager.initializeWithNewArchitecture()
-      
+
       // 🔍 Knuth调试：验证ResourceManager加载结果
       const loadedTools = this.resourceManager.registryData.getResourcesByProtocol('tool')
-      logger.info(`[DiscoverCommand] Tools loaded by ResourceManager: ${loadedTools.map(t => t.id).join(', ') || 'none'}`)
-      
+      logger.info(`[DiscoverCommand] Tools loaded by ResourceManager: ${loadedTools.map((t) => t.id).join(', ') || 'none'}`)
     } catch (error) {
-      logger.warn('[DiscoverCommand] Resource refresh failed:', error.message)
+      logger.warn('[DiscoverCommand] Resource refresh failed:', (error as Error).message)
       // 不抛出错误，确保 discover 命令能继续执行
     }
   }
 
   /**
    * 刷新所有注册表
-   * 在加载资源前先刷新注册表，确保显示最新的资源
    */
-  async refreshAllRegistries() {
+  async refreshAllRegistries(): Promise<void> {
     try {
       logger.info('[DiscoverCommand] Starting to refresh all registries...')
-      
+
       // 1. 刷新项目级注册表（如果在项目环境中）
-      // 项目级注册表是可选的，可能没有初始化项目
       try {
         const currentProject = ProjectManager.getCurrentProject()
         if (currentProject && currentProject.initialized) {
@@ -206,25 +305,24 @@ class DiscoverCommand extends BasePouchCommand {
         // 项目未初始化是正常情况，不需要报错
         logger.debug('[DiscoverCommand] Project not initialized, skipping project-level registry refresh')
       }
-      
+
       // 2. 刷新用户级注册表（这个是必须的）
       logger.info('[DiscoverCommand] Refreshing user-level registry...')
       const userDiscovery = new UserDiscovery()
       await userDiscovery.generateRegistry()
-      
+
       logger.info('[DiscoverCommand] Registry refresh completed')
     } catch (error) {
-      logger.warn('[DiscoverCommand] Registry refresh failed:', error.message)
+      logger.warn('[DiscoverCommand] Registry refresh failed:', (error as Error).message)
       // 不抛出错误，继续使用现有注册表
     }
   }
 
   /**
    * 加载角色注册表
-   * @param {Object} [filterOpts] - { showArchived, onlyArchived }
-   * @returns {Promise<Object>} 角色注册信息（按来源分类，附带 archived 标记）
+   * @param filterOpts - { showArchived, onlyArchived }
    */
-  async loadRoleRegistry (filterOpts = {}) {
+  async loadRoleRegistry(filterOpts: { showArchived?: boolean; onlyArchived?: boolean } = {}): Promise<Record<string, RoleEntry>> {
     logger.info('[DiscoverCommand] Loading role registry...')
 
     // 资源刷新已经在 assembleAreas 中的 refreshAllResources 完成
@@ -232,23 +330,28 @@ class DiscoverCommand extends BasePouchCommand {
     const roles = this.resourceManager.registryData.getResourcesByProtocol('role')
 
     // 严格过滤：只保留 protocol 确实是 'role' 的资源
-    const filteredRoles = roles.filter(role => role.protocol === 'role')
+    const filteredRoles = roles.filter((role) => role.protocol === 'role')
 
     // 转换为对象格式以保持兼容性
-    const registry = {}
-    filteredRoles.forEach(role => {
-      registry[role.id] = role
+    const registry: Record<string, RoleEntry> = {}
+    filteredRoles.forEach((role) => {
+      registry[role.id] = role as RoleEntry
     })
 
     // KNUTH-FEAT 2026-07-04: 加载已归档的 V1 IDs 用于标记归档状态
     const archivedV1Ids = new Set(await RoleLifecycle.listArchivedV1())
-    filteredRoles.forEach(role => {
+    filteredRoles.forEach((role) => {
       if (archivedV1Ids.has(role.id)) {
-        registry[role.id].archived = true
+        const existing = registry[role.id]
+        if (existing) {
+          existing.archived = true
+        }
       }
     })
 
-    logger.info(`[DiscoverCommand] Found ${Object.keys(registry).length} roles (${archivedV1Ids.size} archived V1)`)
+    logger.info(
+      `[DiscoverCommand] Found ${Object.keys(registry).length} roles (${archivedV1Ids.size} archived V1)`,
+    )
 
     // KNUTH-FEAT 2026-07-04: 提前把 filter 提到 try 块外，避免 tsup/esbuild
     // 把同名 const 缩减到 try 内部、随后 forEach 引用不到报 ReferenceError
@@ -264,24 +367,26 @@ class DiscoverCommand extends BasePouchCommand {
       const v2Roles = onlyArchived
         ? await bridge.listRetiredV2()
         : await bridge.listV2Roles({ includeRetired: showArchived })
-      v2Roles.forEach(role => {
+      v2Roles.forEach((role) => {
         // 不再覆盖 V1（包括 ID 重名也走 v2: 前缀保持 V1 可见）
         // KNUTH-HARDENING 2026-07-05: 保留 role.archived 字段供 RoleListArea 渲染 ⚠️
         registry[`v2:${role.id}`] = { ...role, version: 'v2' }
       })
       if (v2Roles.length > 0) {
-        logger.info(`[DiscoverCommand] Found ${v2Roles.length} V2 roles from RoleX (kept under v2: prefix to preserve V1 system roles)`)
+        logger.info(
+          `[DiscoverCommand] Found ${v2Roles.length} V2 roles from RoleX (kept under v2: prefix to preserve V1 system roles)`,
+        )
       }
     } catch (error) {
       // RoleX 不可用时静默跳过
-      logger.debug('[DiscoverCommand] RoleX not available, skipping V2 roles:', error.message)
+      logger.debug('[DiscoverCommand] RoleX not available, skipping V2 roles:', (error as Error).message)
     }
 
     // KNUTH-FEAT 2026-07-04: 按归档状态过滤
     // - default (showArchived=false, onlyArchived=false) → 排除 archived
     // - showArchived=true → 全部通过，role.archived 字段保留用于渲染标记
     // - onlyArchived=true → 只保留 archived
-    const filteredRegistry = {}
+    const filteredRegistry: Record<string, RoleEntry> = {}
     Object.entries(registry).forEach(([id, role]) => {
       const isArchived = !!role.archived
       if (onlyArchived) {
@@ -298,9 +403,8 @@ class DiscoverCommand extends BasePouchCommand {
 
   /**
    * 加载 V2 角色的组织架构信息
-   * @returns {Promise<Object>} 组织架构数据
    */
-  async loadDirectoryData() {
+  async loadDirectoryData(): Promise<DirectoryData> {
     try {
       const bridge = getRolexBridge()
       const directoryData = await bridge.directory()
@@ -309,76 +413,74 @@ class DiscoverCommand extends BasePouchCommand {
 
       // bridge.directory() 已经返回解析好的对象，不需要再解析
       if (directoryData && typeof directoryData === 'object') {
-        logger.info(`[DiscoverCommand] Loaded directory data: ${directoryData.roles?.length || 0} roles, ${directoryData.organizations?.length || 0} orgs`)
+        logger.info(
+          `[DiscoverCommand] Loaded directory data: ${directoryData.roles?.length || 0} roles, ${directoryData.organizations?.length || 0} orgs`,
+        )
         return directoryData
       }
       return { roles: [], organizations: [] }
     } catch (error) {
-      logger.warn('[DiscoverCommand] Failed to load directory data:', error.message)
-      logger.warn('[DiscoverCommand] Error stack:', error.stack)
+      logger.warn('[DiscoverCommand] Failed to load directory data:', (error as Error).message)
+      logger.warn('[DiscoverCommand] Error stack:', (error as Error).stack)
       return { roles: [], organizations: [] }
     }
   }
 
   /**
    * 解析 directory 命令的输出
-   * @param {string} text - directory 命令的文本输出
-   * @returns {Object} 解析后的数据 { roles: [], organizations: [] }
    * @deprecated bridge.directory() 已经返回解析好的对象
    */
-  parseDirectoryOutput(text) {
+  parseDirectoryOutput(text: string): DirectoryData {
     try {
       // directory 输出是 JSON 格式
-      const data = JSON.parse(text)
+      const data = JSON.parse(text) as { roles?: Array<{ name: string; org?: string; position?: string }>; organizations?: unknown[] }
       return {
         roles: data.roles || [],
-        organizations: data.organizations || []
+        organizations: data.organizations || [],
       }
     } catch (error) {
-      logger.warn('[DiscoverCommand] Failed to parse directory output:', error.message)
+      logger.warn('[DiscoverCommand] Failed to parse directory output:', (error as Error).message)
       return { roles: [], organizations: [] }
     }
   }
 
   /**
    * 加载工具注册表
-   * @returns {Promise<Object>} 工具注册信息（按来源分类）
    */
-  async loadToolRegistry () {
+  async loadToolRegistry(): Promise<Record<string, ToolEntry>> {
     // 资源刷新已经在 assembleAreas 中的 refreshAllResources 完成
     // 这里直接使用ResourceManager的注册表
-    
+
     // 从注册表中获取所有工具资源
     const tools = this.resourceManager.registryData.getResourcesByProtocol('tool')
-    
+
     // 严格过滤：只保留 protocol 确实是 'tool' 的资源
-    const filteredTools = tools.filter(tool => tool.protocol === 'tool')
-    
+    const filteredTools = tools.filter((tool) => tool.protocol === 'tool')
+
     // 转换为对象格式以保持兼容性
-    const registry = {}
-    filteredTools.forEach(tool => {
-      registry[tool.id] = tool
+    const registry: Record<string, ToolEntry> = {}
+    filteredTools.forEach((tool) => {
+      registry[tool.id] = tool as ToolEntry
     })
-    
+
     logger.info(`[DiscoverCommand] Found ${Object.keys(registry).length} tools`)
     return registry
   }
-  
+
   /**
    * 检测MCP进程ID
    */
-  detectMcpId() {
+  detectMcpId(): string {
     return ProjectManager.getCurrentMcpId()
   }
 
   /**
    * 检测IDE类型
-   * @returns {string} IDE类型
    */
-  async detectIdeType() {
+  async detectIdeType(): Promise<string> {
     // 使用 ProjectManager 的检测方法
     return this.projectManager.detectIdeType()
   }
 }
 
-module.exports = DiscoverCommand
+export default DiscoverCommand

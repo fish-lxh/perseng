@@ -16,25 +16,13 @@
  * - 包含多种类型的 Area
  * - 保持与原有系统的兼容性
  *
- * P0 step 0B.4.1: 迁 .js → .ts. BaseLayer 仍在 .js（0B.4.2 迁）,
- * 用 const+require 模式避免 apps/cli TS6059 rootDir。
+ * P0 step 0B.4.1: 迁 .js → .ts.
+ * 0B.4.3: BaseLayer 已在 .ts, 改用正式 ESM import.
  */
 
+import { BaseLayer } from './BaseLayer.js'
+import { BaseArea } from '../areas/BaseArea.js'
 import * as logger from '@promptx/logger'
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const BaseLayer = require('./BaseLayer') as unknown as new (
-  name: string,
-  priority: number,
-  options?: Record<string, unknown>,
-) => {
-  assembleAreas(context?: unknown): Promise<void>
-  render(context?: unknown): Promise<string>
-  validate(): boolean
-  getMetadata(): Record<string, unknown>
-  registerArea(area: { getName(): string }): void
-  areas: Array<{ getName(): string; constructor: { name: string }; format(content: string): string }>
-}
 
 /** 上层调用时的 render context 字段 */
 export interface RoleRenderContext {
@@ -99,7 +87,7 @@ export class RoleLayer extends BaseLayer {
    * 添加角色相关的 Area
    * 提供便捷方法供 Command 使用
    */
-  addRoleArea(area: AreaLike): void {
+  addRoleArea(area: BaseArea): void {
     this.registerArea(area)
     logger.debug(`[RoleLayer] Added ${area.getName()} area`)
   }
@@ -107,7 +95,7 @@ export class RoleLayer extends BaseLayer {
   /**
    * 批量添加 Areas
    */
-  addRoleAreas(areas: AreaLike[]): void {
+  addRoleAreas(areas: BaseArea[]): void {
     for (const area of areas) {
       this.addRoleArea(area)
     }
@@ -150,7 +138,7 @@ export class RoleLayer extends BaseLayer {
    * 格式化 Area 内容
    * 保持原有的格式化方式
    */
-  formatAreaContent(area: AreaLike, content: string): string {
+  formatAreaContent(area: BaseArea, content: string): string {
     // 使用 Area 自己的格式化
     return area.format(content)
   }
@@ -189,7 +177,7 @@ export class RoleLayer extends BaseLayer {
   /**
    * 获取元信息
    */
-  getMetadata(): Record<string, unknown> {
+  getMetadata() {
     return {
       ...super.getMetadata(),
       roleId: this.roleId,
@@ -217,8 +205,8 @@ export class RoleLayer extends BaseLayer {
    */
   static createWithBasicAreas(
     roleId: string,
-    roleArea?: AreaLike,
-    stateArea?: AreaLike,
+    roleArea?: BaseArea,
+    stateArea?: BaseArea,
   ): RoleLayer {
     const layer = new RoleLayer({ roleId })
 
