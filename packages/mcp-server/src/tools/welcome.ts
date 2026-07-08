@@ -12,7 +12,7 @@ export function createDiscoverTool(enableV2: boolean): ToolWithHandler {
 
 Lists all activatable roles and callable tools, grouped by source:
 - **📦 System**: Built-in Perseng roles/tools
-- **🏗️ Project**: Project-specific (requires \`project\` tool to bind first)
+- **🏗️ Project**: Project-specific (workspace auto-bound by CLI/Desktop at startup)
 - **👤 User**: User-created custom resources${enableV2 ? '\n- **🎭 RoleX V2**: Lifecycle-managed roles' : ''}
 
 ## When to Use
@@ -24,7 +24,8 @@ Lists all activatable roles and callable tools, grouped by source:
 
 ## Tips
 
-- In a project context, run \`project\` first to bind the directory, then \`discover\`
+- In a project context, the workspace is auto-bound at CLI/Desktop startup — just run \`discover\`
+  to enumerate resources (no manual \`project\` call needed from the model)
 - Use the returned role IDs with \`action\` to activate
 - Tools include manual links — learn before using
 

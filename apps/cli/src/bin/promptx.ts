@@ -100,7 +100,7 @@ program
   .command('project [workspacePath]')
   .description('project pouch - manage project configuration and environment')
   .action(async (workspacePath, _options) => {
-    // If workspacePath is provided, pass it as workingDirectory parameter
+    // §14.1: project 命令本身显式绑定工作区，无需先 restore
     const args = workspacePath ? { workingDirectory: workspacePath } : {}
     await cli.execute('project', [args])
   })
@@ -112,6 +112,8 @@ program
   .option('--include-archived', 'Include archived roles in the list')
   .option('--archived', 'Show only archived roles (hidden by default)')
   .action(async (options) => {
+    // §14.1: 启动时自动注入 project 状态, 大模型无需先调用 project 工具
+    await ensureProjectRestored()
     // KNUTH-FEAT 2026-07-04: 三参转发到 DiscoverCommand.assembleAreas
     // PouchCLI.execute 接受 Array，约定 [0] 位置传 options 对象
     const opts = {
@@ -134,6 +136,7 @@ program
   .command('learn [resourceUrl]')
   .description('learn pouch - learn resource content of specified protocols (thought://, execution://, etc.)')
   .action(async (resourceUrl, _options) => {
+    await ensureProjectRestored()
     await cli.execute('learn', resourceUrl ? [resourceUrl] : [])
   })
 
@@ -141,6 +144,7 @@ program
   .command('recall [query]')
   .description('recall pouch - AI actively retrieves relevant professional knowledge from memory')
   .action(async (query, _options) => {
+    await ensureProjectRestored()
     await cli.execute('recall', query ? [query] : [])
   })
 
@@ -148,6 +152,7 @@ program
   .command('remember [content...]')
   .description('remember pouch - AI actively internalizes knowledge and experience into memory system')
   .action(async (content, _options) => {
+    await ensureProjectRestored()
     const args = content || []
     await cli.execute('remember', args)
   })
@@ -159,6 +164,8 @@ program
   .description('toolx pouch - execute JavaScript functions in Perseng tool ecosystem (ToolX)')
   .action(async (argumentsJson, _options) => {
     try {
+      // §14.1: 启动时自动注入 project 状态, 大模型无需先调用 project 工具
+      await ensureProjectRestored()
       // KNUTH-FIX 2026-07-05: 显式标注 Record<string, unknown>，避免 ts6133 + 让 tool_resource / parameters
       // 这种动态键的访问有最小类型安全。
       let args: Record<string, unknown> = {};
@@ -191,7 +198,7 @@ program
 
       await cli.execute('toolx', [args]);
     } catch (error) {
-      console.error(`ToolX command execution failed: ${error.message}`);
+      console.error(`ToolX command execution failed: ${(error as Error).message}`);
       process.exit(1);
     }
   })
@@ -208,7 +215,7 @@ program
   .action(async (options) => {
     try {
       logger.info(chalk.cyan(`Starting MCP Server via Perseng CLI...`))
-      
+
       // Use PersengServerManager for unified server management (formerly MCPServerManager)
       await PersengServerManager.launch({
         transport: options.transport as 'stdio' | 'http',

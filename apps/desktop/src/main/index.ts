@@ -32,6 +32,7 @@ import { registerWebAccessIpc } from '~/main/ipc/webAccessIpc'
 import { registerWorkspaceIpc } from '~/main/ipc/workspaceIpc'
 import { registerUpdateIpc } from '~/main/ipc/updateIpc'
 import { setupAppEvents, type AppLifecycleDeps } from '~/main/lifecycle/AppLifecycle'
+import { restoreProjectForDesktop } from '~/main/lifecycle/ProjectBinding'
 
 class PersengDesktopApp {
   private trayPresenter: TrayPresenter | null = null
@@ -69,6 +70,10 @@ class PersengDesktopApp {
     // Wait for app to be ready
     await app.whenReady()
     logger.info('Electron app ready')
+
+    // §14.1: Desktop 启动时若 cwd 命中已注册项目, 自动恢复 project 状态
+    // (失败/无 instance 时静默返回, 不影响主进程启动链路)
+    await restoreProjectForDesktop()
 
     // Hide dock icon on macOS
     if (process.platform === 'darwin' && app.dock) {

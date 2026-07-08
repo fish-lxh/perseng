@@ -5,7 +5,10 @@
 // Perseng 核心工具
 export { discoverTool, createDiscoverTool } from './welcome.js';
 export { actionTool, createActionTool } from './action.js';
-export { projectTool } from './project.js';
+// projectTool 已从 MCP 工具列表剔除（§14.1 优化）：工作区绑定由 CLI/Desktop 启动时
+// 自动注入（cli.execute('project')），不再暴露给大模型以减少 base token。
+// CLI 命令 `promptx project <path>` 仍走 cli.execute('project')，project.ts 实现保留。
+// export { projectTool } from './project.js';
 // export { learnTool } from './learn.js';  // 暂时禁用 learn 工具
 export { recallTool } from './recall.js';
 export { rememberTool } from './remember.js';
@@ -19,7 +22,7 @@ export { organizationTool, createOrganizationTool } from './organization.js';
 
 import { createDiscoverTool } from './welcome.js';
 import { createActionTool } from './action.js';
-import { projectTool } from './project.js';
+// import { projectTool } from './project.js';  // §14.1: 不再注册给大模型
 // import { learnTool } from './learn.js';  // 暂时禁用 learn 工具
 import { recallTool } from './recall.js';
 import { rememberTool } from './remember.js';
@@ -37,7 +40,7 @@ export function createAllTools(enableV2: boolean): ToolWithHandler[] {
   const tools: ToolWithHandler[] = [
     createDiscoverTool(enableV2),
     createActionTool(enableV2),
-    projectTool,
+    // projectTool  // §14.1: 不再下发，CLI/Desktop 启动时自动绑定
     // learnTool,  // 暂时禁用 learn 工具
     recallTool,
     rememberTool,
