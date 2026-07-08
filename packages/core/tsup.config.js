@@ -7,13 +7,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   entry: {
-    index: 'src/index.js',
-    cognition: 'src/cognition/index.js',
-    resource: 'src/resource/index.js',
-    toolx: 'src/toolx/index.js'
+    index: 'src/index.ts',
+    cognition: 'src/cognition/index.ts',
+    resource: 'src/resource/index.ts',
+    toolx: 'src/toolx/index.ts'
   },
   format: ['cjs'], // 只构建 CommonJS
-  dts: false, // 不生成类型声明（因为是 JS 项目）
+  dts: true, // P0 step 0B.6: packages/core 全部 .ts, 启用类型声明
   splitting: false,
   sourcemap: true,
   clean: true,

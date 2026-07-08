@@ -171,7 +171,7 @@ pnpm test
 
 当前没有未收敛的红色构建项，但仍存在后续值得继续推进的非阻塞风险：
 
-- `packages/core` 仍以大量 JS 源码为主，类型边界不如 TS 包稳定
+- ~~`packages/core` 仍以大量 JS 源码为主，类型边界不如 TS 包稳定~~ → 2026-07-08 闭环：见 §15（P0 Step 0B 完成）
 - MCP Server 的接口测试虽然已恢复，但覆盖重点仍偏“契约存在性”，可进一步增加真实 transport 行为断言
 - Electron 桌面端的安全模型已明显收紧，但仍建议继续审查外部资源打开、工作区授权、日志脱敏等边角路径
 - 目前尚未形成一份正式的依赖漏洞扫描归档文档，可在后续交付中补充版本、CVE、处置状态三元表
@@ -512,9 +512,11 @@ pnpm test
 - `packages/core`
   - 目标：降低 JS 历史包对全仓类型系统的持续污染
   - 动作：优先迁移最常被下游消费的模块到 TS
+  - **2026-07-08 状态**：已完成（136 .js → .ts，详见 §15）
 - `apps/desktop/src/main`
   - 目标：避免主进程继续膨胀成全能入口
   - 动作：按领域拆 service 注册与 IPC 注册
+  - **2026-07-08 状态**：lifecycle 已抽（Step 2.3）；装配层收敛继续推进
 - `packages/runtime/src/internal/CommandHandler.ts`
   - 目标：避免 runtime 中心编排器持续变重
   - 动作：拆分 image/message/summarization 用例
@@ -534,3 +536,94 @@ pnpm test
 - 建立依赖漏洞归档表与处置流程
 - 抽象“高风险回归测试集”作为稳定脚本
 - 为本地配置损坏增加自动诊断与修复提示
+
+## 14. 降本增效：MCP 调用降级为 CLI/Native 的架构重构方案
+
+当前架构中大模型 Token 消耗居高不下的核心痛点在于：**过度依赖 MCP 工具作为唯一的执行入口**。每一次工具的注册（Schema 描述）、模型的思考（调用推理）、执行与返回，都带来了巨大的 Base Token 消耗与往返延迟。
+
+通过对 `packages/mcp-server/src/tools/` 的深度梳理，我们可以按“是否需要大模型语义推理”将现有的 MCP 工具分类，并实施以下降级与重构路线：
+
+### 14.1 建议完全降级为 Native/CLI 的工具（立即节省 Token）
+
+这些工具属于**确定性状态配置或控制面操作**，完全不需要大模型的“智能思考”，应从 MCP Registry 中剔除，改由 UI 层或宿主环境直接调用。
+
+- **`project` (绑定工作区)**
+  - **现状**：要求大模型根据对话判断当前目录并调用工具绑定。
+  - **重构方案**：由 Desktop 主进程或 CLI 在启动/打开文件夹时，直接在底层调用 `cli.execute('project')` 注入状态。大模型根本不需要知道这个工具的存在。
+- **`clear_timeline` (清空历史)**
+  - **现状**：暴露为 MCP 工具，需大模型识别用户“清空历史”的意图后触发。
+  - **重构方案**：在 UI 上提供明确的垃圾桶/清空按钮，点击后直接走 Native API 调用清空。这不仅节省 Token，还能防止大模型误删数据。
+- **`discover` (查询可用角色与工具)**
+  - **现状**：大模型需要先调用 discover 才能知道有哪些角色。
+  - **重构方案**：在 UI 侧实现角色切换下拉菜单，或者在对话初始化时，将可用的 Role 列表以精简文本形式预注（Pre-inject）到 `SystemMessage` 中。
+
+### 14.2 建议部分降级/混合模式的工具
+
+这些工具涉及领域流转，需要区分“用户明确指令”与“大模型自主调度”。
+
+- **`action` (角色激活 `activate`、创建 `born`、归档 `archive`)**
+  - **重构方案**：如果是用户主动要求“切换到 Java 开发角色”，应由 UI 拦截指令并直接调用底层激活，再把结果告知大模型；只有当大模型在处理复杂任务中发现自身能力不足，**主动寻求专家协作时**，才允许它通过 MCP 调用 `action` 激活其他角色。
+  - **收益**：避免用户每句闲聊都带着庞大的 `action` Schema。
+
+### 14.3 必须保留的 MCP 工具（核心 Agent 能力）
+
+这些工具依赖大模型的参数组装、文本生成或规划能力，是核心的 Agent 价值所在。
+
+- **`toolx`**：通用的执行底座，大模型需要通过思考来组装复杂的 YAML 参数（如操作文件、解析 PDF 等）。
+- **`lifecycle` / `learning` / `organization`**：RoleX V2 的核心规划工具。大模型自主拆解任务为 `want -> plan -> todo -> finish` 的过程是 Agent 自治的关键。
+- **`recall` / `remember`**：记忆网络的存取，强依赖大模型的语义提取与总结。
+
+### 14.4 架构演进建议：控制平面与数据平面的剥离
+
+为了彻底解决 Token 消耗问题，建议在 `Runtime` 层引入**拦截器（Interceptor）模式**：
+
+1. **指令路由 (Command Routing)**：当用户输入如 `/clear`、`/role switch xxx` 等明确指令时，由输入层直接拦截并转发给 `CommandHandler`，绕过大模型的推理流。
+2. **动态工具注册 (Dynamic Tool Registry)**：不要在每次对话中挂载 `allTools`。根据当前的激活角色（V1/V2）和任务状态（例如尚未绑定 project 时），动态裁剪下发给大模型的 MCP Schema，使得 System Prompt 达到最小化。
+
+通过上述重构，预计单次对话回合的 Base Token 可缩减 **1000 - 2000 tokens**，大幅降低长会话成本并提升响应速度。
+
+## 15. 2026-07-08 增量：P0 Step 0B（packages/core JS→TS 迁移）收尾
+
+本节是对 §6 / §13 中"packages/core 类型化"P0 项的闭环记录。完整调研与执行路径见 [`docs/tech-core-migration-2026-07-08.md`](tech-core-migration-2026-07-08.md)。
+
+### 15.1 迁移范围与产出
+
+- **136 个 .js → .ts**，分 6 phase：
+  - Phase 1（0B.1）：5 叶子节点（utils/version, dpml/index 等）
+  - Phase 2（0B.2）：utils 完整 3 文件
+  - Phase 3（0B.3）：rolex 完整（Bridge + Dispatcher + 测试）
+  - Phase 4（0B.4.1/0B.4.2/0B.4.3）：pouch 30 文件（叶子 + 中间层 + 顶层 commands）
+  - Phase 5（0B.5）：4 边界 index.js（cognition / resource / toolx / core）
+  - Phase 6（0B.6）：tsup `dts: true` + 完整 turbo build 验证
+- **构建验证**：`bun run turbo build` 10/10 成功（core / cli / desktop / mcp-server / sidecar 等）
+- **测试基线**：vitest 125/125 全绿
+- **类型产物**：`dist/*.d.ts` 4 个文件（49B / 410B / 1.04KB / 1.59KB），下游 TS 消费方可获得类型
+
+### 15.2 关键约束与决策
+
+| 约束 | 决策 | 理由 |
+|------|------|------|
+| `apps/cli` tsconfig `@promptx/core` path-mapping 指向 `packages/core/src`（非 dist）| 边界 `index.ts` 使用 `const X = require('./X.js')` 而非 `import` | 避免 TS6059 rootDir 误判（apps/cli 编译时会把 core source 拉入自己的 program）|
+| tsup `module: commonjs` 不接受 `export = X` | 4 边界文件全部 `export default { ... }` | `module: ES2020` 才允许 `export =`；CJS 兼容需要 default |
+| 模块内部 require 仍用 `.js` 扩展 | vitest `extensionAlias` 自动解析 `.js → .ts` | 测试运行时可同时加载 .js 与 .ts 源 |
+| ESM 入口仍保留 `src/index.esm.js` 手工 wrapper | tsup `onSuccess` 复制到 `dist/index.mjs` | 短期保留，Phase 7 可切 ESM format 让 tsup 自动生成 |
+
+### 15.3 P0 Step 2.3（apps/desktop lifecycle 拆分）
+
+- **目标**：避免主进程继续膨胀成"超级装配中心"（§11.2.1 风险）
+- **动作**：将 `apps/desktop/src/main/index.ts` 中 `setupAppEvents / performCleanup / cleanup` 三个方法抽到独立 `lifecycle/AppLifecycle.ts`
+- **验证**：`electron-vite build` 成功，主进程入口文件 -65 行（482 → 427）
+- **后续**：主进程继续按"装配层 + 生命周期协调层 + 模块化 service"方向收敛（§11.2.1 建议）
+
+### 15.4 关闭项与遗留
+
+**已关闭**（本轮消除）：
+
+- ~~packages/core 全 JS 状态~~ → 全部 .ts
+- ~~`tsup dts: false` 阻碍下游类型消费~~ → `dts: true`
+- ~~主进程入口膨胀（482 行）~~ → -65 行
+
+**遗留**（可独立工作流）：
+
+- apps/cli 的 tsconfig `@promptx/core` path-mapping 仍指向 `src/`，boundary 文件被迫用 const+require。彻底消除需将 path-mapping 切到 `packages/core/dist`，同时配合 `apps/cli` 入口的 `import core from '@promptx/core'` 同步切换（建议作为 P1 独立任务）
+- `packages/core` 仅 4 个边界 `.d.ts`，下游消费方仍可通过 `import core` 获得 namespace 类型；但各子模块（`@promptx/core/cognition` 等）暂无独立类型导出（实际项目内也无人引用 subpath，零成本但可补）
