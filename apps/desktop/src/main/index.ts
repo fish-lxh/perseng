@@ -31,6 +31,7 @@ import { registerFeishuIpc } from '~/main/ipc/feishuIpc'
 import { registerWebAccessIpc } from '~/main/ipc/webAccessIpc'
 import { registerWorkspaceIpc } from '~/main/ipc/workspaceIpc'
 import { registerUpdateIpc } from '~/main/ipc/updateIpc'
+import { setupAppEvents, type AppLifecycleDeps } from '~/main/lifecycle/AppLifecycle'
 
 class PersengDesktopApp {
   private trayPresenter: TrayPresenter | null = null
@@ -361,69 +362,13 @@ class PersengDesktopApp {
   }
 
   private setupAppEvents(): void {
-    // NOTE: second-instance handler is set up in bootstrap.ts
-    // to ensure it's registered before app initialization completes
-
-    // Prevent app from quitting when all windows are closed
-    app.on('window-all-closed', () => {
-      // Keep app running in system tray on all platforms
-      // Do nothing - app stays in system tray
-      // User can quit from tray menu
-    })
-
-    // Handle app quit - use synchronous cleanup
-    let isQuitting = false
-    app.on('before-quit', (event) => {
-      if (!isQuitting) {
-        event.preventDefault()
-        isQuitting = true
-
-        // Perform cleanup
-        this.performCleanup().then(() => {
-          logger.info('Cleanup completed, exiting...')
-          app.exit(0)
-        }).catch((error) => {
-          logger.error('Error during cleanup:', error)
-          app.exit(0)
-        })
-      }
-    })
-
-    // Handle activation (macOS)
-    app.on('activate', () => {
-      // Show tray menu if needed
-    })
-  }
-
-  private async performCleanup(): Promise<void> {
-    try {
-      // Stop server if running
-      if (this.serverPort) {
-        const statusResult = await this.serverPort.getStatus()
-        if (statusResult.ok && statusResult.value === 'running') {
-          logger.info('Stopping server before quit...')
-          await this.serverPort.stop()
-        }
-      }
-    } catch (error) {
-      const err = String(error)
-      logger.error('Error stopping server:', err)
+    // P0 step 2.3: 委托给 AppLifecycle 模块, 装配层只传 getter
+    const lifecycleDeps: AppLifecycleDeps = {
+      getServerPort: () => this.serverPort,
+      getTrayPresenter: () => this.trayPresenter,
+      getAutoStartWindow: () => this.autoStartWindow,
     }
-
-    // Cleanup UI components
-    this.cleanup()
-  }
-
-  private cleanup(): void {
-    if (this.trayPresenter) {
-      this.trayPresenter.destroy()
-      this.trayPresenter = null
-    }
-
-    if (this.autoStartWindow) {
-      this.autoStartWindow.cleanup()
-      this.autoStartWindow = null
-    }
+    setupAppEvents(lifecycleDeps)
   }
 }
 
