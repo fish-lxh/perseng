@@ -3,13 +3,13 @@
  *
  * 完整集成测试需要 mock ResourceManager / ProjectManager / RolexBridge 全链路，
  * 收益边际。这里聚焦最易出错且最关键的参数解析 + 默认值。
+ *
+ * P0 step 0B.4.1: 迁 .js → .ts, 用 ESM import + vitest extensionAlias
+ * （discoverOptions.js → discoverOptions.ts 自动解析）。
  */
 
 import { describe, it, expect } from 'vitest'
-import { createRequire } from 'module'
-
-const require = createRequire(import.meta.url)
-const { parseDiscoverOptions } = require('../discoverOptions')
+import { parseDiscoverOptions } from '../discoverOptions.js'
 
 describe('parseDiscoverOptions', () => {
   it('默认（无参数）→ 全部 false', () => {
