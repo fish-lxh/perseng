@@ -89,12 +89,20 @@ class ProtocolResolver {
     let dir = this.__dirname
     while (dir !== path.parse(dir).root) {
       const packageJson = path.join(dir, 'package.json')
-      if (fs.existsSync(packageJson)) {
-        const pkg = JSON.parse(fs.readFileSync(packageJson, 'utf8'))
-        // 支持配置的包名列表，同时也支持 'promptx' 作为开发版本名称
-        if (pkg.name === 'promptx' || PACKAGE_NAMES.ALL.includes(pkg.name)) {
-          return dir
+      // KNUTH-FIX 2026-07-09: 防御 traverse 路径上不存在 package.json 的目录
+      // (例如仓库根下的 packages/ 聚合层, 没有独立 package.json).
+      // 之前没 try/catch 时 fs.readFileSync 直接 throw ENOENT, 让 AgentX
+      // server start 挂掉 (packages/core/dist/index.js:5047)。
+      try {
+        if (fs.existsSync(packageJson)) {
+          const pkg = JSON.parse(fs.readFileSync(packageJson, 'utf8'))
+          // 支持配置的包名列表，同时也支持 'promptx' 作为开发版本名称
+          if (pkg.name === 'promptx' || PACKAGE_NAMES.ALL.includes(pkg.name)) {
+            return dir
+          }
         }
+      } catch {
+        // 跳过无法读取的 package.json, 继续向上找
       }
       dir = path.dirname(dir)
     }

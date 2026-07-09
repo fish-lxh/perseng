@@ -3,7 +3,7 @@ import * as logger from '@promptx/logger'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
-import { app, safeStorage } from 'electron'
+import { app, safeStorage, BrowserWindow } from 'electron'
 // KNUTH-FIX 2026-07-06: adm-zip 是 CJS 包（"main": "adm-zip.js"），在 ESM 模式下
 // import default 拿到的就是 AdmZip class。之前用 require('adm-zip') 在 "type": "module"
 // 项目里直接 ReferenceError，导致 skill zip 安装"如同虚设"（错误被 catch 吞掉，UI 弹个
@@ -129,9 +129,21 @@ export class AgentXService {
         (p) => p.id === this.config.activeProfileId
       )
       if (active) {
-        this.config.apiKey = active.apiKey
-        this.config.baseUrl = active.baseUrl
-        this.config.model = active.model
+        // KNUTH-FIX 2026-07-08: 当 active profile 的 apiKey 为空时, 不要把
+        // 顶层 apiKey 也覆盖成空 —— 用户可能因为误操作 (handleActivate 没
+        // 校验空 key) 切换到了一个未配置 profile, 这会把上一轮的非空 key
+        // 静默清掉, 之后所有 start()/getConfig() 拿到的都是空。
+        // 只在 active.apiKey 非空时才向下覆盖, 否则保留当前顶层值。
+        if (active.apiKey) {
+          this.config.apiKey = active.apiKey
+          this.config.baseUrl = active.baseUrl
+          this.config.model = active.model
+        } else {
+          logger.warn(
+            `[AgentX] active profile "${active.name}" (${this.config.activeProfileId}) has empty apiKey; keeping top-level values. ` +
+            `Please set API Key in Settings → AgentX Profiles.`
+          )
+        }
       }
     }
   }
@@ -218,10 +230,31 @@ export class AgentXService {
 
     this.saveConfig()
 
+    // KNUTH-FEAT 2026-07-08: 广播 config 变更给所有 window。
+    // 之前 settings 改完配置, AgentX 窗口的 useEffect ([] deps) 不重跑,
+    // 一直停在 "未配置" 占位, 必须关重开窗口才能恢复。
+    this.broadcastConfigChanged()
+
     // 如果服务正在运行，重启以应用新配置
     if (this.isRunning) {
       await this.stop()
       await this.start()
+    }
+  }
+
+  /**
+   * 广播 config 变更给所有 BrowserWindow 的 webContents。
+   * 渲染端 AgentX 窗口会监听此事件并重新检查配置 + 重试启动。
+   */
+  private broadcastConfigChanged(): void {
+    const payload = { config: this.getConfig() }
+    for (const win of BrowserWindow.getAllWindows()) {
+      try {
+        win.webContents.send('agentx:configChanged', payload)
+      } catch (err) {
+        // 单个 window 失败不影响其他 window
+        logger.debug('Failed to broadcast agentx:configChanged to a window:', String(err))
+      }
     }
   }
 

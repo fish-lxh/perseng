@@ -1,0 +1,6 @@
+{
+  "name": "@promptx/packages-monorepo-stub",
+  "private": true,
+  "description": "Stub for upward-traversal finders that mistakenly stop at packages/ before reaching the real workspace root. Never published, not a real package.",
+  "version": "0.0.0"
+}

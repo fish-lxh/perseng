@@ -12,14 +12,28 @@ export default function AgentXPage() {
 
   useEffect(() => {
     let mounted = true
-    let currentAgentx: AgentX | null = null
+    // 每轮 connect 独立的 cancellation + agentx 句柄, 让配置变更时旧会话
+    // 能稳定 dispose, 不会和新的 connect 互相覆盖。
+    let currentConnectId = 0
+    let disposeCurrent: (() => void) | null = null
 
     const connect = async () => {
+      const myConnectId = ++currentConnectId
+      // 先释放上一轮 (dispose + 清状态), 避免 settings 改配置后旧 session 残留
+      disposeCurrent?.()
+      disposeCurrent = null
+
+      // 重置为连接中的占位
+      setError(null)
+      setAgentx(null)
+      setNeedsConfig(false)
+      setIsConnecting(true)
+
       try {
         // 先检查是否已配置 API Key
         const config = await window.electronAPI.agentx.getConfig()
+        if (!mounted || myConnectId !== currentConnectId) return
         if (!config.apiKey) {
-          if (!mounted) return
           setNeedsConfig(true)
           setIsConnecting(false)
           return
@@ -27,6 +41,7 @@ export default function AgentXPage() {
 
         // 检查服务状态，如果没运行则启动
         const isRunning = await window.electronAPI.agentx.getStatus()
+        if (!mounted || myConnectId !== currentConnectId) return
         if (!isRunning) {
           const startResult = await window.electronAPI.agentx.start()
           if (!startResult.success) {
@@ -36,34 +51,46 @@ export default function AgentXPage() {
 
         // 从主进程获取 AgentX 服务器 URL
         const serverUrl = await window.electronAPI.agentx.getServerUrl()
-
-        if (!mounted) return
+        if (!mounted || myConnectId !== currentConnectId) return
 
         // 连接到内嵌的 AgentX 服务器
         const ax = await createAgentX({
           serverUrl,
         })
-
-        if (!mounted) {
+        if (!mounted || myConnectId !== currentConnectId) {
           await ax.dispose()
           return
         }
 
-        currentAgentx = ax
         setAgentx(ax)
         setIsConnecting(false)
+        disposeCurrent = () => {
+          ax.dispose().catch((err) => console.error("Failed to dispose AgentX:", err))
+        }
       } catch (err) {
-        if (!mounted) return
+        if (!mounted || myConnectId !== currentConnectId) return
         setError(err instanceof Error ? err.message : "Failed to connect to AgentX server")
         setIsConnecting(false)
       }
     }
 
-    connect()
+    // KNUTH-FEAT 2026-07-08: 订阅 AgentX 配置变更广播。
+    // 之前 useEffect deps 是 [], 只在 mount 跑一次 —— 用户在 settings 窗口配完
+    // API Key 后, 这个页面的 needsConfig 永远停留在 true, 只能关重开。
+    // main 端 AgentXService.updateConfig() 现在会 webContents.send('agentx:configChanged'),
+    // 这里接到事件就重置状态并重新 connect。
+    const unsubscribeConfigChange = window.electronAPI.agentx.onConfigChange(() => {
+      // 不管之前什么状态, 一律重新尝试连接
+      void connect()
+    })
+
+    // 首次 mount: 启动一轮连接
+    void connect()
 
     return () => {
       mounted = false
-      currentAgentx?.dispose()
+      unsubscribeConfigChange()
+      disposeCurrent?.()
     }
   }, [])
 
