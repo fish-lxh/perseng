@@ -32,9 +32,20 @@ import {
 // --- Mocks ---
 
 interface HoistedMocks {
-  calls: { born: unknown[]; activate: string[]; retire: string[]; rehire: string[]; die: string[] }
+  calls: {
+    born: unknown[]
+    activate: string[]
+    retire: string[]
+    rehire: string[]
+    die: string[]
+    listV2Roles: Array<{ includeRetired?: boolean }>
+    listRetiredV2: number[]
+  }
   bornMock: ReturnType<typeof vi.fn>
   dieMock: ReturnType<typeof vi.fn>
+  listV2RolesMock: ReturnType<typeof vi.fn>
+  listRetiredV2Mock: ReturnType<typeof vi.fn>
+  rehireMock: ReturnType<typeof vi.fn>
 }
 
 const hoisted: HoistedMocks = vi.hoisted(() => {
@@ -44,6 +55,8 @@ const hoisted: HoistedMocks = vi.hoisted(() => {
     retire: [],
     rehire: [],
     die: [],
+    listV2Roles: [],
+    listRetiredV2: [],
   }
   return {
     calls,
@@ -54,6 +67,18 @@ const hoisted: HoistedMocks = vi.hoisted(() => {
     dieMock: vi.fn(async (id: string) => {
       calls.die.push(id)
       return `Individual "${id}" died.`
+    }),
+    listV2RolesMock: vi.fn(async (opts?: { includeRetired?: boolean }) => {
+      calls.listV2Roles.push({ includeRetired: opts?.includeRetired })
+      return []
+    }),
+    listRetiredV2Mock: vi.fn(async () => {
+      calls.listRetiredV2.push(1)
+      return []
+    }),
+    rehireMock: vi.fn(async (id: string) => {
+      calls.rehire.push(id)
+      return `Individual "${id}" rehired.`
     }),
   } as unknown as HoistedMocks
 })
@@ -69,7 +94,7 @@ function makeV1SingleFile(roleId: string): string {
   return file
 }
 
-/** 构造 dispatcher + 注入 mock bridge */
+/** 构造 dispatcher + 注入 mock bridge（基础版，仅 born/activate，存量测试用） */
 function makeDispatcher(): RolexActionDispatcher {
   const dispatcher = new RolexActionDispatcher()
   // dispatcher.bridge 也覆盖（_born 走这里）
@@ -78,6 +103,50 @@ function makeDispatcher(): RolexActionDispatcher {
     activate: async (id: string) => `Activated ${id}`,
   } as unknown as typeof dispatcher.bridge
   return dispatcher
+}
+
+/**
+ * 构造 dispatcher + 注入含 census 检测的 mock bridge（orphan cleanup 测试用）
+ *
+ * 默认返回：
+ *   listV2Roles     → []   (空 active 集合 → 走 orphan 探测分支)
+ *   listRetiredV2   → []   (空 past 集合 → 全新角色分支)
+ *   rehire          → vi.fn
+ *
+ * 测试通过 setCensusMocks() 在 beforeEach 里按场景切换返回值。
+ */
+function makeDispatcherWithCensus(): RolexActionDispatcher {
+  const dispatcher = new RolexActionDispatcher()
+  dispatcher.bridge = {
+    born: hoisted.bornMock,
+    activate: async (id: string) => `Activated ${id}`,
+    listV2Roles: hoisted.listV2RolesMock,
+    listRetiredV2: hoisted.listRetiredV2Mock,
+    rehire: hoisted.rehireMock,
+  } as unknown as typeof dispatcher.bridge
+  return dispatcher
+}
+
+/** 重置 census mocks 调用记录与默认返回 */
+function resetCensusMocks(): void {
+  hoisted.listV2RolesMock.mockReset()
+  hoisted.listRetiredV2Mock.mockReset()
+  hoisted.rehireMock.mockReset()
+  hoisted.calls.listV2Roles = []
+  hoisted.calls.listRetiredV2 = []
+  hoisted.calls.rehire = []
+  hoisted.listV2RolesMock.mockImplementation(async (opts?: { includeRetired?: boolean }) => {
+    hoisted.calls.listV2Roles.push({ includeRetired: opts?.includeRetired })
+    return []
+  })
+  hoisted.listRetiredV2Mock.mockImplementation(async () => {
+    hoisted.calls.listRetiredV2.push(1)
+    return []
+  })
+  hoisted.rehireMock.mockImplementation(async (id: string) => {
+    hoisted.calls.rehire.push(id)
+    return `Individual "${id}" rehired.`
+  })
 }
 
 function setUpFakeHome(): void {
@@ -120,6 +189,7 @@ function tearDownFakeHome(): void {
   hoisted.calls.die = []
   hoisted.bornMock.mockClear()
   hoisted.dieMock.mockClear()
+  resetCensusMocks()
 }
 
 // ============================================================
@@ -435,5 +505,188 @@ describe("RolexActionDispatcher / dispatch('delete') + system protection", () =>
   it('throws on empty roleIds array', async () => {
     const dispatcher = makeDispatcher()
     await expect(dispatcher.dispatch('delete', { roleIds: [] })).rejects.toThrow(/roleIds/)
+  })
+})
+
+// ============================================================
+// KNUTH-FEAT 2026-07-09: pre-born orphan past 节点归位
+//
+// 覆盖（参照 packages/core/src/rolex/RolexActionDispatcher.ts:218-310）：
+// - healthy individual 已存在 → 纯 no-op，不调 rehire
+// - orphan past 节点（典型 sean bug） → rehire 归位后 born
+// - 全新角色（active/past 都不在） → 不调 rehire，直接 born
+// - listV2Roles 抛错 → warn + 继续，born 仍执行
+// - listRetiredV2 抛错 → warn + 继续，born 仍执行
+// - rehire 抛错 → warn + 继续，born 仍执行
+// - 系统保护角色 sean（orphan past）→ rehire 仍工作（引擎级 bypass RoleLifecycle 护栏）
+// - includeRetired=true 必须传给 listV2Roles（healthy 探测需含 archived 个体）
+// - 返回结构不变（archiveV1Results / bornResult 字符串形状保留）
+// ============================================================
+
+describe("RolexActionDispatcher / dispatch('born') + prepareForBorn orphan cleanup", () => {
+  beforeEach(setUpFakeHome)
+  afterEach(tearDownFakeHome)
+
+  it('healthy: individual 已 active → 不调 listRetiredV2/rehire，直接 born', async () => {
+    // active 里已有 'luban'
+    hoisted.listV2RolesMock.mockResolvedValueOnce([
+      { id: 'luban', name: 'luban', description: '', source: 'system', version: 'v2', protocol: 'role', archived: false },
+    ])
+
+    const dispatcher = makeDispatcherWithCensus()
+    const result = await dispatcher.dispatch('born', { name: 'luban', source: 'src' })
+
+    // healthy 时 listV2Roles 应被调用（含 includeRetired=true），listRetiredV2 不应被触发
+    expect(hoisted.listV2RolesMock.mock.calls).toEqual([[{ includeRetired: true }]])
+    expect(hoisted.listRetiredV2Mock).not.toHaveBeenCalled()
+    expect(hoisted.rehireMock).not.toHaveBeenCalled()
+    // born 正常执行
+    expect(hoisted.calls.born).toEqual([{ name: 'luban', source: 'src' }])
+    expect(result).toBe('Individual "luban" born.')
+  })
+
+  it('orphan past 节点 → rehire 归位后 born（典型 sean bug 修复路径）', async () => {
+    // active 空，past 里有 'sean'
+    hoisted.listV2RolesMock.mockResolvedValueOnce([])
+    hoisted.listRetiredV2Mock.mockResolvedValueOnce([
+      { id: 'sean', name: 'sean', description: 'V2 角色 · sean (已归档)', source: 'rolex', version: 'v2', protocol: 'role', archived: true },
+    ])
+
+    const dispatcher = makeDispatcherWithCensus()
+    await dispatcher.dispatch('born', { name: 'sean', source: 'src' })
+
+    // 调用顺序：listV2Roles → listRetiredV2 → rehire → born
+    expect(hoisted.listV2RolesMock.mock.calls).toEqual([[{ includeRetired: true }]])
+    expect(hoisted.listRetiredV2Mock).toHaveBeenCalledTimes(1)
+    expect(hoisted.rehireMock).toHaveBeenCalledWith('sean')
+    expect(hoisted.calls.born).toEqual([{ name: 'sean', source: 'src' }])
+  })
+
+  it('全新角色（active/past 都无）→ 不调 rehire，直接 born', async () => {
+    // active 空，past 也空（默认 mock 行为）
+    const dispatcher = makeDispatcherWithCensus()
+    await dispatcher.dispatch('born', { name: 'brand-new-role', source: 'src' })
+
+    expect(hoisted.listV2RolesMock.mock.calls).toEqual([[{ includeRetired: true }]])
+    expect(hoisted.listRetiredV2Mock).toHaveBeenCalledTimes(1)
+    expect(hoisted.rehireMock).not.toHaveBeenCalled()
+    expect(hoisted.calls.born).toEqual([{ name: 'brand-new-role', source: 'src' }])
+  })
+
+  it('listV2Roles 抛错 → warn + 继续，born 仍执行（不阻断）', async () => {
+    hoisted.listV2RolesMock.mockRejectedValueOnce(new Error('census db locked'))
+
+    const dispatcher = makeDispatcherWithCensus()
+    const result = await dispatcher.dispatch('born', { name: 'foo', source: 'src' })
+
+    // listV2Roles 抛错被 catch；不会进入 listRetiredV2 探测
+    expect(hoisted.listRetiredV2Mock).not.toHaveBeenCalled()
+    expect(hoisted.rehireMock).not.toHaveBeenCalled()
+    // born 仍正常执行（旧行为保留）
+    expect(hoisted.calls.born).toEqual([{ name: 'foo', source: 'src' }])
+    expect(result).toBe('Individual "foo" born.')
+  })
+
+  it('listRetiredV2 抛错 → warn + 继续，born 仍执行（不阻断）', async () => {
+    hoisted.listV2RolesMock.mockResolvedValueOnce([]) // active 空
+    hoisted.listRetiredV2Mock.mockRejectedValueOnce(new Error('census past query failed'))
+
+    const dispatcher = makeDispatcherWithCensus()
+    const result = await dispatcher.dispatch('born', { name: 'foo', source: 'src' })
+
+    expect(hoisted.rehireMock).not.toHaveBeenCalled()
+    expect(hoisted.calls.born).toEqual([{ name: 'foo', source: 'src' }])
+    expect(result).toBe('Individual "foo" born.')
+  })
+
+  it('rehire 抛错 → warn + 继续，born 仍执行（不阻断）', async () => {
+    // 模拟 orphan past 探测到 sean 但 rehire 引擎失败
+    hoisted.listV2RolesMock.mockResolvedValueOnce([])
+    hoisted.listRetiredV2Mock.mockResolvedValueOnce([
+      { id: 'sean', name: 'sean', description: 'x', source: 'rolex', version: 'v2', protocol: 'role', archived: true },
+    ])
+    hoisted.rehireMock.mockRejectedValueOnce(new Error('rt.transform failed'))
+
+    const dispatcher = makeDispatcherWithCensus()
+    const result = await dispatcher.dispatch('born', { name: 'sean', source: 'src' })
+
+    // rehire 失败被 catch；born 仍执行（虽然会因为 rt.create 复用 past 节点可能仍有问题，
+    // 但 dispatcher 层不再抛错阻断）
+    expect(hoisted.rehireMock).toHaveBeenCalledWith('sean')
+    expect(hoisted.calls.born).toEqual([{ name: 'sean', source: 'src' }])
+    expect(result).toBe('Individual "sean" born.')
+  })
+
+  it('系统保护角色 sean (orphan past) → rehire 仍工作（不依赖 RoleLifecycle.deleteBatch）', async () => {
+    // sean 在 RoleLifecycle 名单是 protected role（luban/nuwa/dayu/jiangziya/sean），
+    // deleteBatch 默认拒绝；但 prepareForBorn 走的是 bridge.rehire（引擎级），
+    // 不经 RoleLifecycle 护栏。验证 mock 中 rehire 被正常调用即可。
+    hoisted.listV2RolesMock.mockResolvedValueOnce([])
+    hoisted.listRetiredV2Mock.mockResolvedValueOnce([
+      { id: 'sean', name: 'sean', description: 'x', source: 'system', version: 'v2', protocol: 'role', archived: true },
+    ])
+
+    const dispatcher = makeDispatcherWithCensus()
+    await dispatcher.dispatch('born', { name: 'sean', source: 'src' })
+
+    // 没有 deleteBatch 调用，也没有 protected 护栏拦截
+    expect(hoisted.rehireMock).toHaveBeenCalledWith('sean')
+    expect(hoisted.calls.born).toEqual([{ name: 'sean', source: 'src' }])
+  })
+
+  it('listV2Roles 必须用 includeRetired=true（否则 archived healthy 个体会被误判为 orphan）', async () => {
+    // 模拟 archived individual：id 在 individual 集合但 listV2Roles 默认会过滤掉
+    // 必须用 includeRetired=true 才能正确识别 healthy
+    hoisted.listV2RolesMock.mockResolvedValueOnce([
+      { id: 'sean', name: 'sean', description: 'x', source: 'system', version: 'v2', protocol: 'role', archived: true },
+    ])
+
+    const dispatcher = makeDispatcherWithCensus()
+    await dispatcher.dispatch('born', { name: 'sean', source: 'src' })
+
+    // 关键断言：listV2Roles 被调用时 includeRetired=true
+    expect(hoisted.listV2RolesMock.mock.calls[0]?.[0]).toEqual({ includeRetired: true })
+    // healthy 路径：不调 listRetiredV2、不调 rehire
+    expect(hoisted.listRetiredV2Mock).not.toHaveBeenCalled()
+    expect(hoisted.rehireMock).not.toHaveBeenCalled()
+  })
+
+  it('orphan past + archiveV1 同时存在 → rehire + born + archiveV1Results 都正常', async () => {
+    makeV1SingleFile('sean')
+    hoisted.listV2RolesMock.mockResolvedValueOnce([])
+    hoisted.listRetiredV2Mock.mockResolvedValueOnce([
+      { id: 'sean', name: 'sean', description: 'x', source: 'rolex', version: 'v2', protocol: 'role', archived: true },
+    ])
+
+    const dispatcher = makeDispatcherWithCensus()
+    const result = (await dispatcher.dispatch('born', {
+      name: 'sean',
+      source: 'src',
+      archiveV1: ['sean'],
+    })) as {
+      archiveV1Results: Array<{ version: string; id: string; ok: boolean }>
+    }
+
+    // 顺序：rehire → born → archiveV1
+    expect(hoisted.rehireMock).toHaveBeenCalledWith('sean')
+    expect(hoisted.calls.born).toEqual([{ name: 'sean', source: 'src' }])
+    // 返回结构不变：archiveV1Results 字段仍存在
+    expect(result.archiveV1Results).toBeDefined()
+    expect(result.archiveV1Results[0]).toMatchObject({ version: 'v1', id: 'sean', ok: true })
+    expect(
+      existsSync(path.join(homeDir, '.perseng', 'resource', 'role', 'sean.archived')),
+    ).toBe(true)
+  })
+
+  it('missing name 仍优先抛错（不被 prepareForBorn 短路）', async () => {
+    const dispatcher = makeDispatcherWithCensus()
+    // 没有 name → 应直接抛错，且 census mock 不应被调用
+    await expect(
+      dispatcher.dispatch('born', { source: 'src' }),
+    ).rejects.toThrow(/name/)
+    expect(hoisted.listV2RolesMock).not.toHaveBeenCalled()
+    expect(hoisted.listRetiredV2Mock).not.toHaveBeenCalled()
+    expect(hoisted.rehireMock).not.toHaveBeenCalled()
+    expect(hoisted.calls.born).toEqual([])
   })
 })

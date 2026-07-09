@@ -217,6 +217,35 @@ export class RolexActionDispatcher {
 
   private async bornOp(args: DispatchArgs): Promise<unknown> {
     if (!args.name) throw new Error('name is required for born operation')
+
+    // KNUTH-FEAT 2026-07-09: pre-born orphan past 节点归位（rehire）。
+    //
+    // 引擎原语（rolexjs 1.6.3 + @rolexjs/prototype 1.6.3）：
+    //   !census.list {type:'individual'} → active 个体集合
+    //   !census.list {type:'past'}      → retired / orphan 节点集合
+    //   !individual.born                → rt.create(society, C.individual, content, id, alias)
+    //                                     ⚠ 按 id 幂等：id 已存在则**复用**（不重新创建），
+    //                                     然后在其下挂 identity —— 即使现存节点是 past。
+    //   !individual.rehire              → rt.transform(pastNode, C.individual)
+    //                                     past → individual（非硬删，保留历史）
+    //
+    // bug：旧 V1→V2 迁移若中断，past 子树里会留下带 identity 但无 individual 包装的
+    //      孤儿节点。后续 born 时 `find(id)` 跨整棵 society 树（含 past）匹配到该 past
+    //      节点 → rt.create 按 id 复用 → identity 被挂到 past 下而非 individual 下
+    //      → discover 查 `!census.list {type:'individual'}` 永远漏掉该角色（典型症状：sean）。
+    //
+    // fix：born 前用 census 双向探测；只在 past 集合 → rehire 归位（past → individual），
+    //      然后 born 复用已归位的 individual 节点，identity 正确挂载。rehire 是引擎级
+    //      transform，绕过 RoleLifecycle 系统角色护栏，对 sean 等保护角色同样有效。
+    //
+    // 安全约束：
+    //   1. 返回结构不变（archiveV1Results 字段、bornResult 字符串）
+    //   2. 健康状态（active individual 已存在）→ 纯 no-op
+    //   3. 全新角色（active/past 都不存在）→ 纯 no-op
+    //   4. 任何步骤失败仅 warn + 继续，绝不阻断 born
+    //   5. rehire 非硬删，历史保留
+    await this.prepareForBorn(args.name)
+
     const bornResult = await this.bridge.born(args.name, args.source ?? '')
 
     // KNUTH-FEAT 2026-07-04: 迁移完成原子化 —— born 成功后自动归档对应的 V1 角色。
@@ -238,6 +267,50 @@ export class RolexActionDispatcher {
     }
 
     return bornResult
+  }
+
+  /**
+   * KNUTH-FEAT 2026-07-09: pre-born 状态归位 helper。
+   *
+   * 处理"orphan past 节点"问题：个体 id 只在 past 集合里（迁移中断留下的孤儿 / 合法 retire），
+   * born 直接调 `!individual.born` 会被 `rt.create` 的 id-幂等语义坑——
+   * 把 past 节点当作 individual 复用，导致 identity 错挂、census 永远漏报。
+   *
+   * 策略：用 census 双向探测；只在 past → rehire 归位（past→individual），
+   *       born 复用已归位的 individual 节点。
+   *
+   * safety:
+   * - 调用顺序：先 listV2Roles(includeRetired=true)（healthy 检查），再 listRetiredV2（orphan 探测）
+   * - 失败容忍：任何异常均 warn + 继续（不阻断 born，保留旧行为）
+   * - 无副作用：healthy / 全新角色时纯 no-op；orphan 时仅 transform（无硬删、无数据丢失）
+   * - 系统角色：对 sean 等保护角色同样有效（rehire 是引擎级，不走 RoleLifecycle.deleteBatch）
+   */
+  private async prepareForBorn(name: string): Promise<void> {
+    try {
+      // KNUTH-FEAT 2026-07-09: includeRetired=true 是必要的——listV2Roles 默认会
+      // 过滤掉 past 子集里的 id，导致 healthy 检查永远返回 false、误判为 orphan。
+      // 实际我们要的是"是否作为 individual 节点存在"，与 archived 状态无关。
+      const active = await this.bridge.listV2Roles({ includeRetired: true })
+      if (active.some((r) => r.id === name || r.name === name)) {
+        return // healthy：id 已经是 active individual，无需 rehire
+      }
+
+      const retired = await this.bridge.listRetiredV2()
+      if (retired.some((r) => r.id === name || r.name === name)) {
+        logger.info(
+          `[RolexActionDispatcher] born "${name}" → rehire orphan past node first (历史保留)`,
+        )
+        await this.bridge.rehire(name)
+      }
+      // 否则既不在 individual 也不在 past：全新角色，born 直接创建即可
+    } catch (err) {
+      logger.warn(
+        `[RolexActionDispatcher] prepareForBorn("${name}") failed (continuing): ${String(
+          err instanceof Error ? err.message : err,
+        )}`,
+      )
+      // 不抛错：born 可能仍能成功（旧行为）
+    }
   }
 
   private async identityOp(args: DispatchArgs): Promise<string> {
