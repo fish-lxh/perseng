@@ -18,6 +18,7 @@
   },
   "scripts": {
     "postinstall": "node scripts/install-electron.cjs",
+    "prebuild": "node scripts/create-namespace-stub.cjs",
     "dev": "electron-vite dev",
     "build": "pnpm clean && electron-vite build",
     "build:force": "pnpm clean && electron-vite build",
