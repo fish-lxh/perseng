@@ -18,10 +18,15 @@ import * as logger from '@promptx/logger'
 const { getGlobalResourceManager } = require('../../resource') as {
   getGlobalResourceManager(): ResourceManagerLike
 }
+// KNUTH-FIX 2026-07-09: 走具名导出。tsup CJS interop 把模块包成
+// { __esModule: true, DPMLContentParser: class }，原代码 `new require(...)` 会报
+// "DPMLContentParser2 is not a constructor"。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const DPMLContentParser = require('../../dpml/DPMLContentParser') as unknown as new () => DPMLParserLike
+const DPMLContentParser = (require('../../dpml/DPMLContentParser') as { DPMLContentParser: new () => DPMLParserLike })
+  .DPMLContentParser
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const SemanticRenderer = require('../../dpml/SemanticRenderer') as unknown as new () => SemanticRendererLike
+const SemanticRenderer = (require('../../dpml/SemanticRenderer') as { SemanticRenderer: new () => SemanticRendererLike })
+  .SemanticRenderer
 
 /** ResourceManager 鸭子类型（仅 ActionCommand 用到的字段） */
 interface ResourceManagerLike {
