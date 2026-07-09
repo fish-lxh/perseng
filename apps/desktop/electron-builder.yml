@@ -52,7 +52,10 @@ mac:
       arch: [x64, arm64]
 
 win:
-  icon: assets/icons/icon.png
+  # KNUTH-FIX 2026-07-09: 用预生成的多分辨率 icon.ico（7 个尺寸：16/24/32/48/64/128/256，
+  # Vista+ PNG-encoded entries）。原配置指向 icon.png 时 electron-builder 26 的 PNG→ICO
+  # 转换仅产出单个 256x256 条目，Windows 缩放到 16x16 任务栏/标题栏时出现"小图标不完整"。
+  icon: assets/icons/icon.ico
   artifactName: perseng-desktop-${version}-win32-${arch}.${ext}
   requestedExecutionLevel: asInvoker
   target:
@@ -82,6 +85,10 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: ${productName}
   artifactName: perseng-desktop-${version}-win32-${arch}-setup.${ext}
+  # KNUTH-FIX 2026-07-09: 显式指定 installer/uninstaller 图标，避免 electron-builder 默认
+  # 用通用 Electron 图标（导致用户从下载目录/Downloads 看到的安装器 EXE 图标与品牌不符）。
+  installerIcon: assets/icons/icon.ico
+  uninstallerIcon: assets/icons/icon.ico
 
 dmg:
   contents:
