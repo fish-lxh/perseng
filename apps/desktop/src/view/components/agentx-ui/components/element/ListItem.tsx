@@ -158,7 +158,11 @@ export const ListItem: React.ForwardRefExoticComponent<
               <div className="min-w-0 flex-1">
                 <div
                   className={cn(
-                    "font-medium truncate text-foreground",
+                    // KNUTH-FIX 2026-07-09: 选中行原本是 text-foreground (近白色 #e0f2fe)
+                    // 在深色主题下叠加 selected 高亮背景后白字难以辨识。
+                    // 选中态改用 muted-foreground (#7aa2c8 灰)，保留前景层次感但不再刺眼。
+                    "font-medium truncate",
+                    selected ? "text-muted-foreground" : "text-foreground",
                     isCompact ? "text-xs" : "text-xs"
                   )}
                 >
@@ -196,7 +200,9 @@ export const ListItem: React.ForwardRefExoticComponent<
                 <div className="min-w-0 flex-1">
                   <div
                     className={cn(
-                      "font-medium truncate text-foreground",
+                      // KNUTH-FIX 2026-07-09: 选中行改灰，与移动端保持一致。
+                      "font-medium truncate",
+                      selected ? "text-muted-foreground" : "text-foreground",
                       isCompact ? "text-xs" : "text-xs"
                     )}
                   >

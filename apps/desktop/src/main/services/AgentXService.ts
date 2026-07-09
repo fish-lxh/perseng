@@ -198,20 +198,32 @@ export class AgentXService {
     }
     try {
       if (!safeStorage.isEncryptionAvailable()) {
-        // KNUTH-FIX 2026-07-08: safeStorage 不可用时不要直接返回 '' (会丢 key)。
-        // 兜底方案: 尝试把 base64 当成 raw utf-8 解码 (兼容历史上非加密存储的 value)。
-        // 解不出来再返回 '' —— 至少不再静默丢数据。
+        // KNUTH-FIX 2026-07-09: 之前兜底是 `Buffer.from(value.slice(4), 'base64').toString('utf-8')`,
+        // 但 value.slice(4) 已经是 safeStorage 加密后的字节 (被 base64 编码),
+        // 没法用 utf-8 解出原文 —— 出来的全是乱码 (锟斤拷/裸字节含 \x00)。
+        // 这种 apiKey 喂给 Claude SDK 的 child_process.spawn, Node 会拒绝:
+        //   ERR_INVALID_ARG_VALUE: options.env['ANTHROPIC_API_KEY'] must be a string without null bytes
+        // 后果: ClaudeEffector.warmup 静默失败, 消息卡在 "排队中"。
+        //
+        // 现在行为: safeStorage 不可用且存的是加密值 → 返回空串并大声警告,
+        // 让上层 start() 抛 "API Key not configured", 用户去 Settings 重新输入。
         logger.warn(
-          'safeStorage unavailable while decrypting AgentX secret; falling back to raw base64'
+          'safeStorage unavailable while decrypting AgentX secret that was stored encrypted; ' +
+            'returning empty key (user must re-enter API key in Settings → AgentX Profiles).'
         )
-        try {
-          return Buffer.from(value.slice(4), 'base64').toString('utf-8')
-        } catch (fallbackError) {
-          logger.warn('Raw base64 fallback also failed:', String(fallbackError))
-          return ''
-        }
+        return ''
       }
-      return safeStorage.decryptString(Buffer.from(value.slice(4), 'base64'))
+      const decrypted = safeStorage.decryptString(Buffer.from(value.slice(4), 'base64'))
+      // KNUTH-FIX 2026-07-09: 防御性 —— 任何含 \x00 的字符串都不能塞进 child_process env。
+      // 如果 safeStorage 在某些平台上吐出含 NUL 的损坏串, 剥掉避免 spawn 报 ERR_INVALID_ARG_VALUE。
+      if (decrypted.includes('\x00')) {
+        logger.warn(
+          'decrypted AgentX secret contains NUL bytes; stripping. ' +
+            'Key may be corrupted; user should re-enter in Settings.'
+        )
+        return decrypted.replace(/\x00/g, '')
+      }
+      return decrypted
     } catch (error) {
       logger.warn('Failed to decrypt AgentX secret:', String(error))
       return ''
