@@ -52,6 +52,10 @@ export interface EventBus {
   getStore(): _EventStore | null
 }
 
-// M2 预览 — 当前文档写入，stage 2 PR 跟进实现，避免需要改 import 路径。
-export type { Projection } from './Projection.js'
+// M2 — Replay 服务 + Projection + audit
+export { replay } from './replay.js'
 export type { ReplayOptions } from './replay.js'
+export { validatePure } from './Projection.js'
+export type { Projection } from './Projection.js'
+export { audit } from './audit.js'
+export type { AuditOptions } from './audit.js'

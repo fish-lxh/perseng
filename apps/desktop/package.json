@@ -51,6 +51,7 @@
     "@promptx/config": "workspace:*",
     "@promptx/core": "workspace:*",
     "@promptx/electron-storage": "workspace:*",
+    "@promptx/events": "workspace:*",
     "@promptx/feishu-desktop": "workspace:*",
     "@promptx/mcp-office": "workspace:*",
     "@promptx/mcp-server": "workspace:*",
