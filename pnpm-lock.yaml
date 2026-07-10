@@ -312,11 +312,20 @@ importers:
         specifier: ^5.0.5
         version: 5.0.5
 
+  packages/content-validator:
+    dependencies:
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
+
   packages/core:
     dependencies:
       '@npmcli/arborist':
         specifier: ^9.5.0
         version: 9.5.0
+      '@promptx/events':
+        specifier: workspace:*
+        version: link:../events
       '@promptx/logger':
         specifier: workspace:*
         version: link:../logger
@@ -390,6 +399,22 @@ importers:
       better-sqlite3:
         specifier: ^12.10.0
         version: 12.10.0
+
+  packages/events:
+    dependencies:
+      '@promptx/logger':
+        specifier: workspace:*
+        version: link:../logger
+      better-sqlite3:
+        specifier: ^12.10.0
+        version: 12.10.0
+      mitt:
+        specifier: ^3.0.1
+        version: 3.0.1
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
 
   packages/feishu-desktop:
     dependencies:

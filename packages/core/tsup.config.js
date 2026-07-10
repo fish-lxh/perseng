@@ -24,6 +24,7 @@ export default defineConfig({
   external: [
     '@modelcontextprotocol/sdk',
     '@promptx/logger',
+    '@promptx/events',
     '@promptx/resource',
     'chevrotain',
     'chalk',

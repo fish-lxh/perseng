@@ -47,6 +47,8 @@ export interface ActAsOptions {
   attach?: { knowledge?: string[]; skill?: string[]; persona?: string[] }
   /** fallback 行为（仅对 actAs('skill'|'persona') 有效；role 永远 throw） */
   fallback?: 'throw' | 'prompt'
+  /** KNUTH-FEAT 2026-07-11: 透传给事件平台的 session/agent 上下文 */
+  context?: { sessionId?: string; agentId?: string }
 }
 
 /** actAs 成功结果 */
@@ -210,7 +212,62 @@ export async function actAs(id: string, opts: ActAsOptions = {}): Promise<ActAsR
     sessionCache.set(cacheKey, result)
   }
 
+  // KNUTH-FEAT 2026-07-11 (M1 事件平台 PR-1): actAs 成功 → emit 一条 core.role.activated。
+  // Fire-and-forget：调用方不需要等事件落库。emit 内部已 try/catch；这里只 catch import 失败。
+  // 失败不影响 result 返回值。
+  if (result.kind === 'role') {
+    void emitRoleActivated(result, opts.context)
+  }
+
   return result
+}
+
+/**
+ * 内部 emit 包装 — 动态 import @promptx/events 避免 core build 时强依赖。
+ *
+ * actAs 是 6 个激活入口的唯一闸口；事件平台可用时（infra 已构建），
+ * 每次成功激活生成一条事件。失败被 catch + warn，不影响返回值。
+ */
+async function emitRoleActivated(
+  result: ActAsResult,
+  context: { sessionId?: string; agentId?: string } | undefined,
+): Promise<void> {
+  try {
+    const events = (await import('@promptx/events')) as {
+      getEventStore?: () => unknown
+      isEventsEnabled?: () => boolean
+    }
+    if (typeof events.isEventsEnabled === 'function' && !events.isEventsEnabled()) return
+    if (typeof events.getEventStore !== 'function') return
+    const store = (events.getEventStore() as {
+      append?: (env: unknown) => Promise<void>
+    }) ?? null
+    if (!store || typeof store.append !== 'function') return
+    await store.append({
+      type: 'core.role.activated',
+      ts: Date.now(),
+      producer: 'core:actAs',
+      producerVersion: '2.4.1', // 与 package.json version 对齐；后续抽常量
+      sessionId: context?.sessionId ?? null,
+      agentId: context?.agentId ?? null,
+      payload: {
+        roleId: result.identity.id,
+        kind: result.kind,
+        reference: result.reference,
+        version: 'v1',
+      },
+      role: 'system',
+      schemaVersion: 1,
+    })
+  } catch (err) {
+    // 静默：事件平台不可用 / events 包未构建时，actAs 主流程不被打断
+    if (process.env['PERSENG_DEBUG']) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[actAs] emit role.activated failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
 }
 
 /** 同步版：仅校验 id 是否在册，不返回内容。用于 hot path 校验（如 CLI quick check）。 */

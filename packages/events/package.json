@@ -1,0 +1,86 @@
+{
+  "name": "@promptx/events",
+  "version": "2.4.1",
+  "description": "Runtime event platform for Perseng — append-only SQLite-backed event store, in-process bus, deterministic replay, and audit surface. Subscribers translate into views (timeline, dashboards, traces). Double-write compatible with the legacy MCP timeline.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./bus": {
+      "types": "./dist/EventBus.d.ts",
+      "import": "./dist/EventBus.js",
+      "require": "./dist/EventBus.cjs"
+    },
+    "./store": {
+      "types": "./dist/EventStore.d.ts",
+      "import": "./dist/EventStore.js",
+      "require": "./dist/EventStore.cjs"
+    },
+    "./attacher": {
+      "types": "./dist/EventStoreAttacher.d.ts",
+      "import": "./dist/EventStoreAttacher.js",
+      "require": "./dist/EventStoreAttacher.cjs"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js",
+      "require": "./dist/types.cjs"
+    },
+    "./projection": {
+      "types": "./dist/Projection.d.ts",
+      "import": "./dist/Projection.js",
+      "require": "./dist/Projection.cjs"
+    },
+    "./replay": {
+      "types": "./dist/replay.d.ts",
+      "import": "./dist/replay.js",
+      "require": "./dist/replay.cjs"
+    },
+    "./audit": {
+      "types": "./dist/audit.d.ts",
+      "import": "./dist/audit.js",
+      "require": "./dist/audit.cjs"
+    },
+    "./ipc-contract": {
+      "types": "./dist/ipc-contract.d.ts",
+      "import": "./dist/ipc-contract.js",
+      "require": "./dist/ipc-contract.cjs"
+    },
+    "./instance": {
+      "types": "./dist/instance.d.ts",
+      "import": "./dist/instance.js",
+      "require": "./dist/instance.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@promptx/logger": "workspace:*",
+    "better-sqlite3": "^12.10.0",
+    "mitt": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13"
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT"
+}
