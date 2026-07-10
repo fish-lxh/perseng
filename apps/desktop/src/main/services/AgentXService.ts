@@ -409,19 +409,11 @@ export class AgentXService {
       await this.agentx.listen(this.port, this.externalAccess ? '0.0.0.0' : '127.0.0.1')
       this.isRunning = true
 
-      // 旁路挂载时间线捕获：直接绑到 runtime.onAny，拿到 SystemBus 全量事件
-      // （包含 source==='environment' 的 tool_*/text_* 流式事件，facade 过滤掉的那些）。
-      // KNUTH-FEAT 2026-07-04: 见 plan 方案 A。
-      try {
-        const { getEventLog, attachEventLogger } = await import('@promptx/mcp-server/timeline')
-        // KNUTH-FIX 2026-07-05: attachEventLogger 的 EventSource/EventLog 类型 vs TimelineAttacher 的
-        // 局部 TimelineLogLike 接口结构不严格对齐（前者 log 字段更多），用 cast 兜底；
-        // 运行时合法（attachEventLogger 实际接受任何带 onAny/on 的 bus）。
-        this.detachTimeline = built.attachTimeline(attachEventLogger as any, getEventLog())
-        logger.info('Timeline event capture attached (onAny mode)')
-      } catch (err) {
-        logger.warn('Failed to attach timeline capture (non-fatal):', String(err))
-      }
+      // KNUTH-FEAT 2026-07-11 (M5 cutover): legacy 双写关闭。
+      // timeline UI / MCP timeline 工具现统一读 events_v2 (V2 single-source) —
+      // 旧 `~/.perseng/timeline/events.db` 停止写入新事件。
+      // this.detachTimeline 字段保留 — 见 apps/desktop/docs/events-cutover.md §3 rollback。
+      logger.info('Legacy timeline double-write disabled per M5 cutover; events_v2 is the single source')
 
       logger.info(`AgentX service started on ws://${this.externalAccess ? '0.0.0.0' : 'localhost'}:${this.port}`)
     } catch (error) {

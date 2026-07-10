@@ -6,6 +6,12 @@
 读完这份文档就能在不冒风险的前提下，把 Timeline UI 从 V2 (`events_v2`)
 单一切回 legacy `events` 表（如果需要回退），或者彻底关闭 legacy。
 
+> **M5 状态更新 (2026-07-11)**：
+> - §2.1 已执行 — AgentX 双写关闭
+> - MCP `query_timeline` / `clear_timeline` 工具已切到 V2
+> - `packages/mcp-server/src/timeline/` 目录已删除（EventLog/EventLogger/instance/index）
+> - `TimelineEventRow` 类型已 import 自 `@promptx/events`，无本地副本
+
 ---
 
 ## 0. 现状（M3 PR-3 落地后）
@@ -113,9 +119,11 @@ mv ~/.perseng/timeline/events.db ~/.perseng/timeline/events.db.archived-$(date +
 将 `import { getEventStore } from '@promptx/events'` 换回 `getEventLog()`，
 并把 `mapRowToLegacy` 改为直通 — V2 row 字段名不一样，需要重新映射。
 
-### 步骤 3.3 — `apps/desktop/package.json`
+### 步骤 3.3 — `packages/mcp-server/src/tools/timeline.ts`
 
-移除 `"@promptx/events": "workspace:*"`。
+恢复 `import { getEventLog } from '~/timeline/index.js'` + handler 内 `getEventStore()` → `getEventLog()`。
+但因为 `packages/mcp-server/src/timeline/` 已在 M5 删除，此回退需要先把目录恢复
+（git revert M5 commit）。**建议**：M5 已是终态，不要回退；如必须回退，回滚整个 M5 commit。
 
 不删 `packages/events/*`；它仍然在 npm workspace 里，下个 release 可以再次启用。
 

@@ -2,6 +2,7 @@
  * timeline:* IPC handlers — read from @promptx/events (V2 store).
  *
  * KNUTH-FEAT 2026-07-11 (M3 PR-3 of runtime event platform).
+ * KNUTH-FEAT 2026-07-11 (M5 cutover): AgentX 双写关闭，本文件是唯一 timeline 数据源。
  *
  * 改动概要：
  * - 数据源：`@promptx/mcp-server/timeline` → `@promptx/events`（V2 `events_v2` 表）
@@ -10,9 +11,10 @@
  * - 行映射：V2 `EventStoreRow` → legacy `TimelineEventRow` 形状（payload 重 stringify，
  *   `ingestedAt` → `createdAt`），renderer TimelinePanel 不用改
  *
- * 双写并存期：本 main 进程读 V2 单一来源；
- * legacy `~/.perseng/timeline/events.db` 由 AgentXService.attachTimeline() 继续写。
- * 详见 `apps/desktop/docs/events-cutover.md`（M3 同步落地的 runbook）。
+ * KNUTH-FEAT 2026-07-11 (M5): `TimelineEventRow` / `EventRole` 类型现在直接 import 自
+ * `@promptx/events`，不再有本地副本（解决 schema 重复定义技术债）。
+ *
+ * 详见 `apps/desktop/docs/events-cutover.md`。
  */
 
 import { ipcMain } from 'electron'
@@ -20,24 +22,24 @@ import * as logger from '@promptx/logger'
 import { getEventStore } from '@promptx/events'
 import type {
   ClearFilter as EventsClearFilter,
+  EventRole,
   EventStoreFilter,
   EventStoreQueryOptions,
   EventStoreRow,
 } from '@promptx/events'
 
 // ============================================================================
-// 形状适配：V2 row → legacy TimelineEventRow (renderer 期望的形状)
+// 形状适配：V2 row → renderer 期望的 TimelineEventRow 形状
 // ============================================================================
 
-type EventRole =
-  | 'user'
-  | 'assistant'
-  | 'tool_call'
-  | 'tool_result'
-  | 'system'
-  | 'unknown'
-
-interface TimelineEventRow {
+/**
+ * Renderer 期望的事件行形状：
+ * - payload 重 stringify（V2 store 返回 parsed object，renderer 期望 string）
+ * - ingestedAt → createdAt（legacy 字段名对齐）
+ * KNUTH-FEAT 2026-07-11 (M5): 此 interface 现在是 renderer 侧的 contract，
+ * 与 @promptx/events 的 EventStoreRow 共享 EventRole，但行形态差异保留在这里。
+ */
+export interface TimelineEventRow {
   id: number
   ts: number
   sessionId: string | null
@@ -108,8 +110,8 @@ function toEventsFilter(filter: RendererQueryFilter): EventStoreFilter {
   if (filter.sinceTs !== undefined) f.sinceTs = filter.sinceTs
   if (filter.untilTs !== undefined) f.untilTs = filter.untilTs
   if (filter.types && filter.types.length > 0) f.types = filter.types
-  // 注：V2 store 暂不支持 roles[]（role 是 envelope 字段而非 query 一级维度），
-  // 后续 PR-5 可以加入。renderer 的 roles 过滤在 UI 侧就能应付（M3 暂不强求 server 端）。
+  // 注：V2 EventStore SQL 层不支持 roles[] 过滤（role 是 envelope 字段，不是 query 一级维度）。
+  // MCP `query_timeline` 工具在 client-side 二次过滤；renderer TimelinePanel 在 UI 侧过滤。
   return f
 }
 
@@ -117,7 +119,7 @@ function toClearFilter(filter: { scope?: string; targetId?: string }): EventsCle
   if (filter.scope && filter.scope !== 'all') {
     if (!filter.targetId) throw new Error('clear: targetId required for non-all scope')
     return {
-      scope: filter.scope as 'session' | 'agent' | 'image' | 'producer',
+      scope: filter.scope as EventsClearFilter['scope'],
       targetId: filter.targetId,
     }
   }
