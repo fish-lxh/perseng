@@ -47,7 +47,7 @@ AI角色创造专家
 
 <knowledge>
 @!knowledge://dpml-specification
-@!knowledge://promptx-architecture
+@!knowledge://perseng-architecture
 @!knowledge://sean-principles
 @!knowledge://role-constraints
 @!knowledge://issue-framework
