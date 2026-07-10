@@ -9,7 +9,10 @@
 import { ipcMain } from 'electron'
 import * as fs from 'node:fs'
 import * as logger from '@promptx/logger'
-import { scanPersengHome, querySqlite } from '~/main/services/DatabaseManager'
+// KNUTH-FEAT 2026-07-10: 数据库扫描逻辑已下沉到 @promptx/electron-storage,
+// 本 ipc handler 只负责 (a) 把 electron shell.openPath / showItemInFolder
+// 这类宿主能力接出来, (b) 把 ~/.perseng/ 路径作为参数传给 querySqlite。
+import { scanPersengHome, querySqlite } from '@promptx/electron-storage'
 import { getPersengHomeDir } from '~/main/utils/persengPaths'
 
 // Module-level guard mirrors the original `(this as any)._dbManagerIpcRegistered`.
@@ -72,7 +75,7 @@ export function registerDatabaseManagerIpc(): void {
       if (!dbPath || !sql?.trim()) {
         return { success: false, error: 'dbPath or sql is empty' }
       }
-      const result = querySqlite(dbPath, sql)
+      const result = querySqlite(dbPath, sql, getPersengHomeDir())
       return { success: true, ...result }
     } catch (error: any) {
       logger.error('SQL query failed:', error?.message ?? String(error))

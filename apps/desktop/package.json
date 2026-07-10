@@ -50,6 +50,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@promptx/config": "workspace:*",
     "@promptx/core": "workspace:*",
+    "@promptx/electron-storage": "workspace:*",
     "@promptx/mcp-office": "workspace:*",
     "@promptx/mcp-server": "workspace:*",
     "@promptx/mcp-workspace": "workspace:*",
