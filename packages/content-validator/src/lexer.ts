@@ -12,8 +12,15 @@
 
 import type { Ref, LoadingSemantic } from './types.js'
 
-/** 完整 regex —— 不带尾部空白（避免匹配跨多个 ref 的整行）*/
-const RESOURCE_REF_REGEX = /^(@[!?]?|@)([a-zA-Z][a-zA-Z0-9_-]*):(\S+)$/
+/**
+ * 完整 regex —— 不带 $ 锚点。
+ *
+ * 原因：我们在 `line.substring(at).match(...)` 里调用，正则锚定的 ^ 是 substring
+ * 起点，$ 是 substring 终点。如果带 $，那 `执行能力：见 @!skill://foo @!skill://bar`
+ * 这种多 ref 行就匹配不上（因为 \S+ 后面还有 inline 文本）。不带 $ 让 \S+ 尽量吃掉
+ * 后续非空白，然后由 parseRef 用 [a-zA-Z0-9_-]+ 截断 id。
+ */
+const RESOURCE_REF_REGEX = /^(@[!?]?|@)([a-zA-Z][a-zA-Z0-9_-]*):(\S+)/
 
 /**
  * 把一行内的 markdown code span / fenced code 段标记为不可信区间

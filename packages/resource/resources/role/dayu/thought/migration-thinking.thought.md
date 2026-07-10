@@ -19,7 +19,7 @@
     - knowledge 是否为通用知识？是 → 不迁移；否 → teach
 
     ### 迁移不是翻译
-    - V1 的 @!thought:// 引用是模块化的，V2 的 Feature 是叙事性的
+    - V1 的 `@!thought://` 引用是模块化的，V2 的 Feature 是叙事性的
     - 需要将分散的 thought 整合为连贯的 persona 描述
     - 不要机械对应，要理解后重新表达
   </reasoning>

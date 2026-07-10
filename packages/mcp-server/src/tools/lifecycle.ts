@@ -87,7 +87,8 @@ A V2 role must be activated first via the \`action\` tool before using lifecycle
       const coreExports = core.default || core;
 
       // KNUTH-FEAT 2026-07-10: 内容契约 M3 — 先 actAs 校验角色是否在册。
-      // I-1：未知 role 必须在 MCP 层就显式失败，绝不让 dispatcher 内部默默处理。
+      // I-1：未知 role 必须抛错（让 MCPOutputAdapter handleError 设置 isError: true），
+      // 不能返回 success — 否则 AI 客户端把错误文本当 tool result 触发即兴扮演。
       if (args.role && args.role !== '_') {
         try {
           const actAs = (coreExports as any).actAs;
@@ -95,10 +96,7 @@ A V2 role must be activated first via the \`action\` tool before using lifecycle
             await actAs(args.role, { fallback: 'throw' });
           }
         } catch (e: any) {
-          return outputAdapter.convertToMCPFormat({
-            type: 'error',
-            content: `❌ 角色 '${args.role}' 不存在。\n\n${e?.message || ''}\n\n请使用 discover 工具查看可用角色。`,
-          });
+          throw new Error(`角色 '${args.role}' 不存在。\n\n${e?.message || ''}\n\n请使用 discover 工具查看可用角色。`);
         }
       }
 

@@ -190,10 +190,7 @@ After activating a V2 role, use these tools for further operations:
             await actAs(args.role, { fallback: 'throw' });
           }
         } catch (e: any) {
-          return outputAdapter.convertToMCPFormat({
-            type: 'error',
-            content: `❌ 角色 '${args.role}' 不存在。\n\n${e?.message || ''}\n\n请使用 discover 工具查看可用角色。`,
-          });
+          throw new Error(`角色 '${args.role}' 不存在。\n\n${e?.message || ''}\n\n请使用 discover 工具查看可用角色。`);
         }
 
         const { RolexActionDispatcher } = (coreExports as any).rolex;
@@ -214,10 +211,7 @@ After activating a V2 role, use these tools for further operations:
             await actAs(args.role, { fallback: 'throw' });
           }
         } catch (e: any) {
-          return outputAdapter.convertToMCPFormat({
-            type: 'error',
-            content: `❌ 角色 '${args.role}' 不存在。\n\n${e?.message || ''}\n\n请使用 discover 工具查看可用角色。`,
-          });
+          throw new Error(`角色 '${args.role}' 不存在。\n\n${e?.message || ''}\n\n请使用 discover 工具查看可用角色。`);
         }
 
         const { RolexActionDispatcher } = (coreExports as any).rolex;
@@ -245,18 +239,16 @@ async function activateV1(args: { role: string; roleResources?: string }) {
   const coreExports = core.default || core;
 
   // KNUTH-FEAT 2026-07-10: 内容契约 M3 — 激活前置 actAs 校验。
-  // I-1：未知 role 必须在 MCP 层就显式失败，**不能**让 ActionCommand 渲染 error 后
-  // 还返回 success — 否则 AI 客户端会把错误文本当成 tool result，触发"即兴扮演"。
+  // I-1：未知 role 必须抛错（让 MCPOutputAdapter 走 handleError 分支设置 isError: true），
+  // **不能**返回 success — 否则 AI 客户端会把错误文本当成 tool result，触发"即兴扮演"。
   try {
     const actAs = (coreExports as any).actAs;
     if (typeof actAs === 'function') {
       await actAs(args.role, { fallback: 'throw' });
     }
   } catch (e: any) {
-    return outputAdapter.convertToMCPFormat({
-      type: 'error',
-      content: `❌ 角色 '${args.role}' 不存在。\n\n${e?.message || ''}\n\n请使用 discover 工具查看可用角色。`,
-    });
+    // 抛错让 outputAdapter.convertToMCPFormat 走 handleError → 返回 isError: true
+    throw new Error(`角色 '${args.role}' 不存在。\n\n${e?.message || ''}\n\n请使用 discover 工具查看可用角色。`);
   }
 
   const cli = (coreExports as any).cli || (coreExports as any).pouch?.cli;
