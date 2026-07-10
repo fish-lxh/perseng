@@ -13,6 +13,24 @@ import { ipcMain, app } from 'electron'
 import { FeishuManager } from '@promptx/feishu-desktop'
 import { agentXService } from '~/main/services/AgentXService'
 
+// KNUTH-FEAT 2026-07-10: 内容契约 M3 — 启动时 actAs 校验默认角色，
+// 避免把不存在的 role 名注入到 Feishu session。
+async function resolveRoleId(roleConfig?: { name?: string }): Promise<string> {
+  const candidate = roleConfig?.name || 'Perseng'
+  try {
+    const core = await import('@promptx/core')
+    const actAs = (core as any).actAs || (core.default && (core.default as any).actAs)
+    if (typeof actAs === 'function') {
+      const result = await actAs(candidate, { fallback: 'throw' })
+      return result.identity.id
+    }
+  } catch (e: any) {
+    throw new Error(`飞书默认角色 '${candidate}' 不存在：${e?.message || ''}`)
+  }
+  // actAs 不可用时退化为原行为（兼容旧版 core）
+  return candidate
+}
+
 export function registerFeishuIpc(): void {
   const dataDir = app.getPath('userData')
   const feishuManager = new FeishuManager(dataDir, agentXService.getPort())
@@ -36,7 +54,14 @@ export function registerFeishuIpc(): void {
 
   ipcMain.handle('feishu:start', async (_, feishuConfig: any, roleConfig?: any) => {
     try {
-      const role = roleConfig || { name: 'Perseng' }
+      // KNUTH-FEAT 2026-07-10: actAs 校验；找不到 → 拒绝启动，运营需先配置有效 role
+      let roleName: string
+      try {
+        roleName = await resolveRoleId(roleConfig)
+      } catch (e: any) {
+        return { success: false, error: e?.message || '默认角色校验失败' }
+      }
+      const role = { ...(roleConfig || {}), name: roleName }
       await feishuManager.start(feishuConfig, role)
       return { success: true }
     } catch (error: any) {

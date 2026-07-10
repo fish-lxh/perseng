@@ -52,6 +52,18 @@ interface SemanticRendererLike {
   [key: string]: unknown
 }
 
+/** KNUTH-FEAT 2026-07-10: 角色未找到时的结构化错误。入口层（actAs / MCP action）应据此返回 isError。 */
+export class RoleNotFoundError extends Error {
+  public readonly roleId: string
+  public readonly available: string[]
+  constructor(roleId: string, available: string[] = []) {
+    super(`角色 '${roleId}' 不存在。可用角色: ${available.join(', ') || '(无)'}`)
+    this.name = 'RoleNotFoundError'
+    this.roleId = roleId
+    this.available = available
+  }
+}
+
 /** 角色信息（ActionCommand 组装后传给 RoleArea） */
 interface RoleInfo {
   id: string
@@ -177,44 +189,63 @@ export class ActionCommand extends BasePouchCommand {
 
   /**
    * 获取角色信息
+   *
+   * KNUTH-FEAT 2026-07-10: 失败路径改为抛 RoleNotFoundError，不再返回 null。
+   * 内容契约 M3 不变量 I-1：未知 id 必须显式失败，绝不返回"假身份"。
+   * 上游调用方（ActionCommand.assembleLayers、MCP action tool、CLI action）据此
+   * 把错误传播出去，AI 客户端就能看到 isError 而不是 success+错误文本。
    */
-  async getRoleInfo(roleId: string): Promise<RoleInfo | null> {
+  async getRoleInfo(roleId: string): Promise<RoleInfo> {
     logger.debug(`[ActionCommand] getRoleInfo called, role ID: ${roleId}`)
 
+    let result
     try {
       logger.debug(`[ActionCommand] ResourceManager state before loadResource call:`, {
         initialized: this.resourceManager.initialized,
       })
 
-      const result = await this.resourceManager.loadResource(`@role://${roleId}`)
-
-      logger.debug(`[ActionCommand] loadResource returned:`, result)
-
-      if (!result || !result.success) {
-        logger.warn(`[ActionCommand] Role resource not found: @role://${roleId}`)
-        return null
-      }
-
-      const content = result.content
-      if (!content) {
-        logger.warn(`[ActionCommand] Role resource content is empty: @role://${roleId}`)
-        return null
-      }
-
-      const parsed = this.dpmlParser.parseRoleDocument(content)
-      return {
-        id: roleId,
-        semantics: parsed as RoleInfo['semantics'],
-        metadata: result.metadata || {},
-      }
+      result = await this.resourceManager.loadResource(`@role://${roleId}`)
     } catch (error) {
-      logger.error(`[ActionCommand] Failed to get role information:`, {
-        message: (error as Error).message,
-        stack: (error as Error).stack,
-        name: (error as Error).name,
-        toString: (error as Error).toString(),
-      })
-      return null
+      // loadResource 内部已 swallow error 进 {success:false, error}，
+      // 走到这里说明 ResourceManager 自身抛了（极少见）。重抛以便上层感知。
+      logger.error(`[ActionCommand] loadResource threw:`, error as Error)
+      const available = this._safeListRoleIds()
+      throw new RoleNotFoundError(roleId, available)
+    }
+
+    logger.debug(`[ActionCommand] loadResource returned:`, result)
+
+    if (!result || !result.success) {
+      logger.warn(`[ActionCommand] Role resource not found: @role://${roleId}`)
+      const available = this._safeListRoleIds()
+      throw new RoleNotFoundError(roleId, available)
+    }
+
+    const content = result.content
+    if (!content) {
+      logger.warn(`[ActionCommand] Role resource content is empty: @role://${roleId}`)
+      const available = this._safeListRoleIds()
+      throw new RoleNotFoundError(roleId, available)
+    }
+
+    const parsed = this.dpmlParser.parseRoleDocument(content)
+    return {
+      id: roleId,
+      semantics: parsed as RoleInfo['semantics'],
+      metadata: result.metadata || {},
+    }
+  }
+
+  /** 列出注册表中所有 role id，失败时返回空数组（不让 list 错误掩盖主错误） */
+  private _safeListRoleIds(): string[] {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rm = this.resourceManager as any
+      const registryData = rm.registryData
+      if (!registryData || typeof registryData.getResourcesByProtocol !== 'function') return []
+      return registryData.getResourcesByProtocol('role').map((r: { id: string }) => r.id)
+    } catch {
+      return []
     }
   }
 

@@ -182,6 +182,20 @@ After activating a V2 role, use these tools for further operations:
       if (args.version === 'v2') {
         const core = await import('@promptx/core');
         const coreExports = core.default || core;
+
+        // KNUTH-FEAT 2026-07-10: V2 path 也加 actAs 前置校验。
+        try {
+          const actAs = (coreExports as any).actAs;
+          if (typeof actAs === 'function') {
+            await actAs(args.role, { fallback: 'throw' });
+          }
+        } catch (e: any) {
+          return outputAdapter.convertToMCPFormat({
+            type: 'error',
+            content: `❌ 角色 '${args.role}' 不存在。\n\n${e?.message || ''}\n\n请使用 discover 工具查看可用角色。`,
+          });
+        }
+
         const { RolexActionDispatcher } = (coreExports as any).rolex;
         const dispatcher = new RolexActionDispatcher();
         const result = await dispatcher.dispatch('activate', args);
@@ -192,6 +206,20 @@ After activating a V2 role, use these tools for further operations:
       try {
         const core = await import('@promptx/core');
         const coreExports = core.default || core;
+
+        // KNUTH-FEAT 2026-07-10: V2 path 也加 actAs 前置校验。
+        try {
+          const actAs = (coreExports as any).actAs;
+          if (typeof actAs === 'function') {
+            await actAs(args.role, { fallback: 'throw' });
+          }
+        } catch (e: any) {
+          return outputAdapter.convertToMCPFormat({
+            type: 'error',
+            content: `❌ 角色 '${args.role}' 不存在。\n\n${e?.message || ''}\n\n请使用 discover 工具查看可用角色。`,
+          });
+        }
+
         const { RolexActionDispatcher } = (coreExports as any).rolex;
         const dispatcher = new RolexActionDispatcher();
 
@@ -215,6 +243,22 @@ async function activateV1(args: { role: string; roleResources?: string }) {
   console.info(`[action] Activating V1 (DPML) for role: ${args.role}`);
   const core = await import('@promptx/core');
   const coreExports = core.default || core;
+
+  // KNUTH-FEAT 2026-07-10: 内容契约 M3 — 激活前置 actAs 校验。
+  // I-1：未知 role 必须在 MCP 层就显式失败，**不能**让 ActionCommand 渲染 error 后
+  // 还返回 success — 否则 AI 客户端会把错误文本当成 tool result，触发"即兴扮演"。
+  try {
+    const actAs = (coreExports as any).actAs;
+    if (typeof actAs === 'function') {
+      await actAs(args.role, { fallback: 'throw' });
+    }
+  } catch (e: any) {
+    return outputAdapter.convertToMCPFormat({
+      type: 'error',
+      content: `❌ 角色 '${args.role}' 不存在。\n\n${e?.message || ''}\n\n请使用 discover 工具查看可用角色。`,
+    });
+  }
+
   const cli = (coreExports as any).cli || (coreExports as any).pouch?.cli;
 
   if (!cli || !cli.execute) {

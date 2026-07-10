@@ -110,6 +110,22 @@ export function createOrganizationTool(enableV2: boolean): ToolWithHandler {
       const operation = args.operation;
       const core = await import('@promptx/core');
       const coreExports = core.default || core;
+
+      // KNUTH-FEAT 2026-07-10: 内容契约 M3 — actAs 前置校验。
+      if (args.role && args.role !== '_') {
+        try {
+          const actAs = (coreExports as any).actAs;
+          if (typeof actAs === 'function') {
+            await actAs(args.role, { fallback: 'throw' });
+          }
+        } catch (e: any) {
+          return outputAdapter.convertToMCPFormat({
+            type: 'error',
+            content: `❌ 角色 '${args.role}' 不存在。\n\n${e?.message || ''}\n\n请使用 discover 工具查看可用角色。`,
+          });
+        }
+      }
+
       const { RolexActionDispatcher } = (coreExports as any).rolex;
       const dispatcher = new RolexActionDispatcher();
 

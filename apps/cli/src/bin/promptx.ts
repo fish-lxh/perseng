@@ -129,6 +129,21 @@ program
   .description('action pouch - activate specific AI role, obtain professional prompts')
   .action(async (role, _options) => {
     await ensureProjectRestored()
+
+    // KNUTH-FEAT 2026-07-10: 内容契约 M3 — CLI 入口加 actAs 前置校验。
+    // 未知 role 直接退出码 1，避免 ActionCommand 渲染错误 StateArea 后仍输出
+    // 半截 role prompt 给 AI 触发即兴扮演。
+    try {
+      const actAs = (core as any).actAs
+      if (typeof actAs === 'function') {
+        await actAs(role, { fallback: 'throw' })
+      }
+    } catch (e: any) {
+      console.error(`❌ 错误：${e?.message || '角色激活失败'}`)
+      console.error(`请使用 \`promptx discover\` 查看可用角色。`)
+      process.exit(1)
+    }
+
     await cli.execute('action', [role])
   })
 

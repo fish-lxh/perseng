@@ -35,6 +35,10 @@ const project = require('./project')
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const rolex = require('./rolex')
 
+// KNUTH-FEAT 2026-07-10: 内容契约 (M3) — 统一身份激活入口
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const actAsModule = require('./actAs')
+
 // 工具模块
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const versionModule = require('./utils/version')
@@ -57,7 +61,7 @@ export default {
   pouch,
   project,
   rolex,
-  utils,
+  actAs: actAsModule,
 
   // 便捷导出
   ...utils,
@@ -84,3 +88,8 @@ export {
   rolex,
   utils,
 }
+export const actAs = actAsModule.actAs
+export const isRegistered = actAsModule.isRegistered
+export const ActAsError = actAsModule.ActAsError
+export const ActAsErrorCode = actAsModule.ActAsErrorCode
+export const _resetActAsCache = actAsModule._resetActAsCache
