@@ -131,6 +131,12 @@ async function processFile(filePath, relativePath, registry, stat) {
   } else if (fileName.endsWith('.manual.md')) {
     protocol = 'manual';
     resourceId = path.basename(fileName, '.manual.md');
+  } else if (fileName.endsWith('.skill.md')) {
+    protocol = 'skill';
+    resourceId = path.basename(fileName, '.skill.md');
+  } else if (fileName.endsWith('.persona.md')) {
+    protocol = 'persona';
+    resourceId = path.basename(fileName, '.persona.md');
   } else if (fileName.endsWith('.protocol.md')) {
     protocol = 'protocol';
     resourceId = path.basename(fileName, '.protocol.md');
@@ -214,10 +220,12 @@ function generateDefaultDescription(id, protocol) {
     'knowledge': '知识体系',
     'tool': '工具',
     'manual': '使用手册',
+    'skill': '技能',
+    'persona': '人格',
     'protocol': '协议',
     'tag': '标签'
   };
-  
+
   const typeName = typeNames[protocol] || '资源';
   return `${id} ${typeName}`;
 }

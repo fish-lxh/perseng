@@ -13,6 +13,8 @@ const ExecutionProtocol = require('./protocols/ExecutionProtocol')
 const KnowledgeProtocol = require('./protocols/KnowledgeProtocol')
 const ToolProtocol = require('./protocols/ToolProtocol')
 const ManualProtocol = require('./protocols/ManualProtocol')
+const SkillProtocol = require('./protocols/SkillProtocol')
+const PersonaProtocol = require('./protocols/PersonaProtocol')
 const UserProtocol = require('./protocols/UserProtocol')
 const FileProtocol = require('./protocols/FileProtocol')
 
@@ -50,6 +52,8 @@ class ResourceManager {
     this.protocols.set('knowledge', new KnowledgeProtocol())
     this.protocols.set('tool', new ToolProtocol())
     this.protocols.set('manual', new ManualProtocol())
+    this.protocols.set('skill', new SkillProtocol())
+    this.protocols.set('persona', new PersonaProtocol())
   }
 
   /**
@@ -151,7 +155,9 @@ class ResourceManager {
     const knowledgeProtocol = this.protocols.get('knowledge')
     const toolProtocol = this.protocols.get('tool')
     const manualProtocol = this.protocols.get('manual')
-    
+    const skillProtocol = this.protocols.get('skill')
+    const personaProtocol = this.protocols.get('persona')
+
     if (roleProtocol) {
       roleProtocol.setRegistryManager(this)
     }
@@ -170,7 +176,13 @@ class ResourceManager {
     if (manualProtocol) {
       manualProtocol.setRegistryManager(this)
     }
-    
+    if (skillProtocol) {
+      skillProtocol.setRegistryManager(this)
+    }
+    if (personaProtocol) {
+      personaProtocol.setRegistryManager(this)
+    }
+
     // 逻辑协议设置完成，不输出日志避免干扰用户界面
   }
 
