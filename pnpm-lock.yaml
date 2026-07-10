@@ -123,6 +123,9 @@ importers:
       '@promptx/electron-storage':
         specifier: workspace:*
         version: link:../../packages/electron-storage
+      '@promptx/events':
+        specifier: workspace:*
+        version: link:../../packages/events
       '@promptx/feishu-desktop':
         specifier: workspace:*
         version: link:../../packages/feishu-desktop
@@ -476,6 +479,9 @@ importers:
       '@promptx/core':
         specifier: workspace:*
         version: link:../core
+      '@promptx/events':
+        specifier: workspace:*
+        version: link:../events
       '@promptx/logger':
         specifier: workspace:*
         version: link:../logger

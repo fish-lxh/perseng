@@ -1,7 +1,32 @@
-import type { ToolWithHandler } from '~/interfaces/MCPServer.js';
+import type { ToolWithHandler, ToolEventBus } from '~/interfaces/MCPServer.js';
 import { MCPOutputAdapter } from '~/utils/MCPOutputAdapter.js';
+import { safeEmit } from './_emit.js';
 
 const outputAdapter = new MCPOutputAdapter();
+
+// KNUTH-FEAT 2026-07-11 (M4): 每工具独立 closure bus state
+let _learningEventBus: ToolEventBus | null = null
+const PRODUCER = 'tool:learning'
+const PRODUCER_VERSION = '2.4.1'
+
+function emitLearning(operation: string, role: string | undefined, args: Record<string, unknown>): void {
+  safeEmit(_learningEventBus, {
+    type: `learning.${operation}`,
+    ts: Date.now(),
+    role: 'system',
+    producer: PRODUCER,
+    producerVersion: PRODUCER_VERSION,
+    schemaVersion: 1,
+    sessionId: null,
+    agentId: null,
+    payload: {
+      operation,
+      role: role ?? null,
+      name: (args['name'] as string | undefined) ?? null,
+      id: (args['id'] as string | undefined) ?? null,
+    },
+  })
+}
 
 export function createLearningTool(enableV2: boolean): ToolWithHandler {
   const description = `V2 role cognitive learning cycle - reflect, distill principles, and teach knowledge
@@ -44,7 +69,7 @@ reflect (create experience) → realize (distill principle) → master (create p
 
 A V2 role must be activated first via the \`action\` tool before using learning operations (except synthesize).`;
 
-  return {
+  const tool: ToolWithHandler = {
     name: 'learning',
     description,
     inputSchema: {
@@ -157,9 +182,24 @@ learning 工具仅支持 V2 角色（RoleX）。V1 角色（DPML）请使用 rec
       }
 
       const result = await dispatcher.dispatch(operation, args);
+      // KNUTH-FEAT 2026-07-11 (M4): 成功路径 emit learning.<operation>
+      emitLearning(operation, args.role, args)
       return outputAdapter.convertToMCPFormat(result);
     }
   };
+
+  // KNUTH-FEAT 2026-07-11 (M4): setEventBus 注入器
+  ;(tool as ToolWithHandler & { setEventBus: (bus: ToolEventBus | null) => void }).setEventBus = (
+    bus: ToolEventBus | null,
+  ) => {
+    _learningEventBus = bus
+  }
+  return tool
+}
+
+/** 测试钩子 */
+export function _resetLearningEventBus(): void {
+  _learningEventBus = null
 }
 
 export const learningTool: ToolWithHandler = createLearningTool(true);

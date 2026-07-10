@@ -1,7 +1,34 @@
-import type { ToolWithHandler } from '~/interfaces/MCPServer.js';
+import type { ToolWithHandler, ToolEventBus } from '~/interfaces/MCPServer.js';
 import { MCPOutputAdapter } from '~/utils/MCPOutputAdapter.js';
+import { safeEmit } from './_emit.js';
 
 const outputAdapter = new MCPOutputAdapter();
+
+// KNUTH-FEAT 2026-07-11 (M4): 每工具独立 closure bus state
+let _organizationEventBus: ToolEventBus | null = null
+const PRODUCER = 'tool:organization'
+const PRODUCER_VERSION = '2.4.1'
+
+function emitOrganization(operation: string, role: string | undefined, args: Record<string, unknown>): void {
+  safeEmit(_organizationEventBus, {
+    type: `organization.${operation}`,
+    ts: Date.now(),
+    role: 'system',
+    producer: PRODUCER,
+    producerVersion: PRODUCER_VERSION,
+    schemaVersion: 1,
+    sessionId: null,
+    agentId: null,
+    payload: {
+      operation,
+      role: role ?? null,
+      name: (args['name'] as string | undefined) ?? null,
+      org: (args['org'] as string | undefined) ?? null,
+      position: (args['position'] as string | undefined) ?? null,
+      individual: (args['individual'] as string | undefined) ?? null,
+    },
+  })
+}
 
 export function createOrganizationTool(enableV2: boolean): ToolWithHandler {
   const description = `V2 organization, position, and individual management
@@ -47,7 +74,7 @@ export function createOrganizationTool(enableV2: boolean): ToolWithHandler {
 { "operation": "directory", "role": "_" }
 \`\`\``;
 
-  return {
+  const tool: ToolWithHandler = {
     name: 'organization',
     description,
     inputSchema: {
@@ -153,14 +180,30 @@ organization 工具仅支持 V2 角色（RoleX）。
       try {
         result = await dispatcher.dispatch(operation, args);
       } catch (e: any) {
+        // KNUTH-FEAT 2026-07-11 (M4): 失败路径不 emit
         return outputAdapter.convertToMCPFormat({
           type: 'error',
           content: `❌ RoleX V2 操作失败: ${e?.message || String(e)}`
         });
       }
+      // KNUTH-FEAT 2026-07-11 (M4): 成功路径 emit organization.<operation>
+      emitOrganization(operation, args.role, args)
       return outputAdapter.convertToMCPFormat(result);
     }
   };
+
+  // KNUTH-FEAT 2026-07-11 (M4): setEventBus 注入器
+  ;(tool as ToolWithHandler & { setEventBus: (bus: ToolEventBus | null) => void }).setEventBus = (
+    bus: ToolEventBus | null,
+  ) => {
+    _organizationEventBus = bus
+  }
+  return tool
+}
+
+/** 测试钩子 */
+export function _resetOrganizationEventBus(): void {
+  _organizationEventBus = null
 }
 
 export const organizationTool: ToolWithHandler = createOrganizationTool(true);

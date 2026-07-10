@@ -44,7 +44,21 @@ export type ToolHandler = (args: any) => Promise<{
  */
 export type ToolWithHandler = Tool & {
   handler: ToolHandler;
+  /**
+   * 可选：注入 EventBus，让工具在 handler 成功后埋事件。
+   * PersengMCPServer.registerTools() 会一次性把所有工具 wire 起来。
+   * 缺省时工具不埋事件（向后兼容）。
+   */
+  setEventBus?: (bus: ToolEventBus | null) => void;
 };
+
+/**
+ * 工具埋事件用的最小 EventBus 接口 — 避免 @promptx/mcp-server 强依赖 @promptx/events。
+ * 任何 emit-only 的 bus 形状都满足（@promptx/events.InProcessEventBus / 自定义实现）。
+ */
+export interface ToolEventBus {
+  emit(envelope: Record<string, unknown>): void | Promise<void>
+}
 
 /**
  * 服务器配置选项

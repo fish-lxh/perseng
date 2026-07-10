@@ -9,6 +9,7 @@ import { StdioMCPServer } from './StdioMCPServer.js';
 import { StreamableHttpMCPServer } from './StreamableHttpMCPServer.js';
 import { createAllTools } from '../tools/index.js';
 import type { MCPServer } from '../interfaces/MCPServer.js';
+import type { ToolEventBus } from '../interfaces/MCPServer.js';
 import logger, { error as logError } from '@promptx/logger';
 
 export interface PersengServerOptions {
@@ -69,12 +70,50 @@ export class PersengMCPServer {
     process.env.PERSENG_ENABLE_V2 = enableV2 ? '1' : '0';
 
     const tools = createAllTools(enableV2);
+
+    // KNUTH-FEAT 2026-07-11 (M4): 一次性构建 EventBus 并注入到所有工具。
+    // 失败被 swallow — bus 缺失不应阻断工具注册。
+    void this._injectEventBus(tools)
+
     tools.forEach(tool => {
       this.server.registerTool(tool);
       logger.debug(`Registered tool: ${tool.name}`);
     });
 
     logger.info(`Registered ${tools.length} Perseng tools (V2: ${enableV2})`);
+  }
+
+  /**
+   * KNUTH-FEAT 2026-07-11 (M4): 动态加载 @promptx/events，构建一个 InProcessEventBus，
+   * 并把它注入到所有支持 setEventBus 的工具上。
+   *
+   * 设计要点：
+   * - 动态 import — 避免 @promptx/mcp-server 对 @promptx/events 的硬依赖（在测试/CI 里可独立编译）
+   * - 失败被 swallow — bus 缺失不应阻断工具注册；工具降级为"不埋事件"
+   * - 全部 fire-and-forget — 不阻塞 registerTools() 主流程
+   */
+  private async _injectEventBus(tools: Array<{ setEventBus?: (bus: ToolEventBus | null) => void }>): Promise<void> {
+    try {
+      const events = await import('@promptx/events')
+      const store = events.getEventStore()
+      if (!store) {
+        logger.warn('[M4] EventStore unavailable, tools will not emit envelopes')
+        return
+      }
+      const bus = new events.InProcessEventBus(store) as unknown as ToolEventBus
+      let injected = 0
+      for (const tool of tools) {
+        if (typeof tool.setEventBus === 'function') {
+          tool.setEventBus(bus)
+          injected++
+        }
+      }
+      logger.debug(`[M4] Injected EventBus into ${injected}/${tools.length} tools`)
+    } catch (err) {
+      logger.warn(
+        `[M4] Failed to inject EventBus (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
   }
   
   /**

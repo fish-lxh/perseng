@@ -1,7 +1,65 @@
-import type { ToolWithHandler } from '~/interfaces/MCPServer.js';
-import { MCPOutputAdapter } from '~/utils/MCPOutputAdapter.js';
+/**
+ * action tool — MCP 主入口（role / skill / persona 激活 + V2 life cycle 子集）
+ *
+ * KNUTH-FEAT 2026-07-11 (M4): 接入 Runtime Event Platform。
+ *
+ * 埋事件策略（A3 严格执行 — 成功路径才 emit）：
+ * - activate (V1)         → action.activate
+ * - activate (V2 force)   → action.activate
+ * - activate (V2 auto)    → action.activate
+ * - born                  → action.born
+ * - identity              → action.identity
+ * - archive               → action.archive
+ * - unarchive             → action.unarchive
+ * - delete                → action.delete
+ *
+ * 失败 / 抛错 / dispatcher 返回 falsy → 不 emit。
+ *
+ * 调用顺序：
+ *   await dispatcher.dispatch()
+ *   safeEmit(...)                       ← 在这之前任何抛错都不会 emit
+ *   return outputAdapter.convert(...)
+ */
 
-const outputAdapter = new MCPOutputAdapter();
+import type { ToolWithHandler, ToolEventBus } from '~/interfaces/MCPServer.js';
+import { MCPOutputAdapter } from '~/utils/MCPOutputAdapter.js';
+import { safeEmit } from './_emit.js';
+
+const outputAdapter = new MCPOutputAdapter()
+
+// producerVersion: 与 package.json 同步；后续 PR 抽常量
+const PRODUCER_VERSION = '2.4.1'
+const PRODUCER = 'tool:action'
+
+// 闭包共享的 bus state — 通过 setEventBus() 注入；tests 里也用得到
+let _actionEventBus: ToolEventBus | null = null
+
+/**
+ * Build envelope + safeEmit. 失败也不会影响主流程。
+ */
+function emitAction(args: {
+  operation: string
+  version?: string
+  role?: string
+  result?: unknown
+}): void {
+  safeEmit(_actionEventBus, {
+    type: `action.${args.operation}`,
+    ts: Date.now(),
+    role: 'system',
+    producer: PRODUCER,
+    producerVersion: PRODUCER_VERSION,
+    schemaVersion: 1,
+    sessionId: null,
+    agentId: null,
+    payload: {
+      role: args.role ?? null,
+      operation: args.operation,
+      version: args.version ?? null,
+      versionHint: 'v1',
+    },
+  })
+}
 
 export function createActionTool(enableV2: boolean): ToolWithHandler {
   const description = `Role activation & creation - load role knowledge, memory and capabilities
@@ -87,7 +145,7 @@ After activating a V2 role, use these tools for further operations:
     ? ['activate', 'born', 'identity', 'archive', 'unarchive', 'delete']
     : ['activate'];
 
-  return {
+  const tool: ToolWithHandler = {
     name: 'action',
     description,
     inputSchema: {
@@ -160,7 +218,7 @@ After activating a V2 role, use these tools for further operations:
 
       // V2 disabled: always use V1
       if (!enableV2) {
-        return activateV1(args);
+        return activateV1(args)
       }
 
       // born / identity / archive / unarchive / delete → 走 RoleX 路径（统一通过 dispatcher）
@@ -170,12 +228,14 @@ After activating a V2 role, use these tools for further operations:
         const { RolexActionDispatcher } = (coreExports as any).rolex;
         const dispatcher = new RolexActionDispatcher();
         const result = await dispatcher.dispatch(operation, args);
+        // emit 后调 convertToMCPFormat — 抛错也不阻断
+        emitAction({ operation, role: args.role })
         return outputAdapter.convertToMCPFormat(result);
       }
 
       // 强制 V1
       if (args.version === 'v1') {
-        return activateV1(args);
+        return activateV1(args)
       }
 
       // 强制 V2
@@ -196,6 +256,7 @@ After activating a V2 role, use these tools for further operations:
         const { RolexActionDispatcher } = (coreExports as any).rolex;
         const dispatcher = new RolexActionDispatcher();
         const result = await dispatcher.dispatch('activate', args);
+        emitAction({ operation: 'activate', version: 'v2', role: args.role })
         return outputAdapter.convertToMCPFormat(result);
       }
 
@@ -220,6 +281,7 @@ After activating a V2 role, use these tools for further operations:
         if (await dispatcher.isV2Role(args.role)) {
           const result = await dispatcher.dispatch('activate', args);
           if (result) {
+            emitAction({ operation: 'activate', version: 'v2', role: args.role })
             return outputAdapter.convertToMCPFormat(result);
           }
           console.warn(`[action] V2 activate returned empty for ${args.role}, falling back to V1`);
@@ -228,9 +290,22 @@ After activating a V2 role, use these tools for further operations:
         console.warn(`[action] V2 path failed for ${args.role}, falling back to V1:`, e?.message || e);
       }
 
-      return activateV1(args);
+      return activateV1(args)
     }
   };
+
+  // KNUTH-FEAT 2026-07-11 (M4): setEventBus 注入器 — 每个工具独立绑定 closure。
+  ;(tool as ToolWithHandler & { setEventBus: (bus: ToolEventBus | null) => void }).setEventBus = (
+    bus: ToolEventBus | null,
+  ) => {
+    _actionEventBus = bus
+  }
+  return tool
+}
+
+/** 测试钩子 — 重置 bus state */
+export function _resetActionEventBus(): void {
+  _actionEventBus = null
 }
 
 async function activateV1(args: { role: string; roleResources?: string }) {
@@ -258,6 +333,8 @@ async function activateV1(args: { role: string; roleResources?: string }) {
   }
 
   const result = await cli.execute('action', [args.role, args.roleResources]);
+  // KNUTH-FEAT 2026-07-11 (M4): V1 activate 成功 → emit action.activate (v1)
+  emitAction({ operation: 'activate', version: 'v1', role: args.role })
   return outputAdapter.convertToMCPFormat(result);
 }
 

@@ -1,7 +1,32 @@
-import type { ToolWithHandler } from '~/interfaces/MCPServer.js';
+import type { ToolWithHandler, ToolEventBus } from '~/interfaces/MCPServer.js';
 import { MCPOutputAdapter } from '~/utils/MCPOutputAdapter.js';
+import { safeEmit } from './_emit.js';
 
 const outputAdapter = new MCPOutputAdapter();
+
+// KNUTH-FEAT 2026-07-11 (M4): 每工具独立 closure bus state
+let _lifecycleEventBus: ToolEventBus | null = null
+const PRODUCER = 'tool:lifecycle'
+const PRODUCER_VERSION = '2.4.1'
+
+function emitLifecycle(operation: string, role: string | undefined, args: Record<string, unknown>): void {
+  safeEmit(_lifecycleEventBus, {
+    type: `lifecycle.${operation}`,
+    ts: Date.now(),
+    role: 'system',
+    producer: PRODUCER,
+    producerVersion: PRODUCER_VERSION,
+    schemaVersion: 1,
+    sessionId: null,
+    agentId: null,
+    payload: {
+      operation,
+      role: role ?? null,
+      name: (args['name'] as string | undefined) ?? null,
+      id: (args['id'] as string | undefined) ?? null,
+    },
+  })
+}
 
 export function createLifecycleTool(enableV2: boolean): ToolWithHandler {
   const description = `V2 role goal & task lifecycle management
@@ -39,7 +64,7 @@ want (create goal) → plan (create plan, MUST pass id) → todo (create tasks) 
 
 A V2 role must be activated first via the \`action\` tool before using lifecycle operations.`;
 
-  return {
+  const tool: ToolWithHandler = {
     name: 'lifecycle',
     description,
     inputSchema: {
@@ -129,9 +154,24 @@ lifecycle 工具仅支持 V2 角色（RoleX）。V1 角色（DPML）不支持目
       }
 
       const result = await dispatcher.dispatch(operation, args);
+      // KNUTH-FEAT 2026-07-11 (M4): 成功路径 emit lifecycle.<operation>
+      emitLifecycle(operation, args.role, args)
       return outputAdapter.convertToMCPFormat(result);
     }
   };
+
+  // KNUTH-FEAT 2026-07-11 (M4): setEventBus 注入器
+  ;(tool as ToolWithHandler & { setEventBus: (bus: ToolEventBus | null) => void }).setEventBus = (
+    bus: ToolEventBus | null,
+  ) => {
+    _lifecycleEventBus = bus
+  }
+  return tool
+}
+
+/** 测试钩子 */
+export function _resetLifecycleEventBus(): void {
+  _lifecycleEventBus = null
 }
 
 export const lifecycleTool: ToolWithHandler = createLifecycleTool(true);

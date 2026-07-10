@@ -30,6 +30,7 @@
     "better-sqlite3": "^12.10.0",
     "@promptx/config": "workspace:*",
     "@promptx/core": "workspace:*",
+    "@promptx/events": "workspace:*",
     "@promptx/logger": "workspace:*",
     "chalk": "^5.6.2",
     "commander": "^12.1.0",
