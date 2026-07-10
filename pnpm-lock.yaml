@@ -120,6 +120,12 @@ importers:
       '@promptx/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@promptx/electron-storage':
+        specifier: workspace:*
+        version: link:../../packages/electron-storage
+      '@promptx/feishu-desktop':
+        specifier: workspace:*
+        version: link:../../packages/feishu-desktop
       '@promptx/mcp-office':
         specifier: workspace:*
         version: link:../../packages/mcp-office
@@ -378,6 +384,24 @@ importers:
       '@alicloud/openapi-client':
         specifier: ^0.4.15
         version: 0.4.15
+
+  packages/electron-storage:
+    dependencies:
+      better-sqlite3:
+        specifier: ^12.10.0
+        version: 12.10.0
+
+  packages/feishu-desktop:
+    dependencies:
+      '@larksuiteoapi/node-sdk':
+        specifier: ^1.64.0
+        version: 1.64.0
+      '@promptx/logger':
+        specifier: workspace:*
+        version: link:../logger
+      agentxjs:
+        specifier: 1.9.0
+        version: 1.9.0
 
   packages/logger:
     dependencies:

@@ -8,8 +8,8 @@
 
 import * as logger from '@promptx/logger'
 import type { AgentX } from 'agentxjs'
-import type { FeishuBot, FeishuInboundMessage } from './FeishuBot'
-import type { FeishuSessionManager, RoleConfig } from './FeishuSessionManager'
+import type { FeishuBot, FeishuInboundMessage } from './bot.js'
+import type { FeishuSessionManager, RoleConfig } from './session.js'
 
 export class FeishuBridge {
   private agentx: AgentX

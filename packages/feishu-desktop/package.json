@@ -1,0 +1,35 @@
+{
+  "name": "@promptx/feishu-desktop",
+  "version": "2.4.1",
+  "description": "Feishu (Lark) Bot integration for Perseng desktop — bridges Feishu WebSocket messages to local AgentX runtime. Lives outside apps/desktop/src/main so the same logic can run in CLI / Web hosts that expose a Feishu surface.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.64.0",
+    "@promptx/logger": "workspace:*",
+    "agentxjs": "1.9.0"
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

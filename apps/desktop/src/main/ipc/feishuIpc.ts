@@ -10,7 +10,7 @@
  */
 
 import { ipcMain, app } from 'electron'
-import { FeishuManager } from '~/main/services/feishu'
+import { FeishuManager } from '@promptx/feishu-desktop'
 import { agentXService } from '~/main/services/AgentXService'
 
 export function registerFeishuIpc(): void {

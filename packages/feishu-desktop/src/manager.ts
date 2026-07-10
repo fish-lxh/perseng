@@ -9,9 +9,9 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as logger from '@promptx/logger'
 import { createAgentX, type AgentX } from 'agentxjs'
-import { FeishuBot, type FeishuConfig } from './FeishuBot'
-import { FeishuBridge } from './FeishuBridge'
-import { FeishuSessionManager, type RoleConfig } from './FeishuSessionManager'
+import { FeishuBot, type FeishuConfig } from './bot.js'
+import { FeishuBridge } from './bridge.js'
+import { FeishuSessionManager, type RoleConfig } from './session.js'
 
 export interface FeishuSavedConfig {
   feishu: FeishuConfig
