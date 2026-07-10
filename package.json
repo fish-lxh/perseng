@@ -9,6 +9,8 @@
     "lint": "turbo lint",
     "lint:fix": "turbo lint:fix",
     "clean": "turbo clean",
+    "validate:content": "node packages/content-validator/dist/cli.cjs",
+    "validate:content:strict": "node packages/content-validator/dist/cli.cjs --strict",
     "changeset": "changeset",
     "changeset:add": "changeset add",
     "changeset:status": "changeset status",

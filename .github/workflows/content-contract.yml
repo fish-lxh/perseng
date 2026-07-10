@@ -1,0 +1,48 @@
+name: Content Contract Validation
+
+on:
+  pull_request:
+    paths:
+      - 'packages/resource/resources/**'
+      - 'packages/resource/scripts/generate-registry.js'
+      - 'packages/content-validator/**'
+      - 'docs/content-contract.md'
+  push:
+    branches: [master, main]
+    paths:
+      - 'packages/resource/resources/**'
+      - 'packages/resource/scripts/generate-registry.js'
+      - 'packages/content-validator/**'
+      - 'docs/content-contract.md'
+
+jobs:
+  validate:
+    name: Validate DPML content refs against registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build content-validator
+        run: pnpm --filter @promptx/content-validator build
+
+      - name: Build @promptx/resource (regenerates dist/registry.json)
+        run: node packages/resource/scripts/generate-registry.js
+
+      - name: Validate content references (strict)
+        run: pnpm validate:content:strict

@@ -1,0 +1,36 @@
+{
+  "name": "@promptx/content-validator",
+  "version": "2.4.1",
+  "description": "Build-time content contract validator for Perseng DPML resources. Scans `@!xxx://id` references, checks them against the registry, and produces human-readable + machine-readable reports. Designed to fail CI before bad content ships.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "bin": {
+    "validate-content": "./dist/cli.cjs"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
