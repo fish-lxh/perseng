@@ -36,6 +36,7 @@
     "package:mac:skip": "electron-builder --config electron-builder-dev.yml",
     "package:win": "cross-env ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm_config_disturl=https://npmmirror.com/mirrors/node/ pnpm build && electron-builder --win",
     "package:linux": "pnpm build && electron-builder --linux",
+    "postpackage": "node scripts/inject-stub-into-asar.cjs",
     "dist": "pnpm package:mac"
   },
   "dependencies": {
