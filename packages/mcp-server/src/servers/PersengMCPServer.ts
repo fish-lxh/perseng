@@ -7,10 +7,11 @@
 
 import { StdioMCPServer } from './StdioMCPServer.js';
 import { StreamableHttpMCPServer } from './StreamableHttpMCPServer.js';
-import { createAllTools } from '../tools/index.js';
+import { createAllTools, buildToolRegistry } from '../tools/index.js';
 import type { MCPServer } from '../interfaces/MCPServer.js';
 import type { ToolEventBus } from '../interfaces/MCPServer.js';
 import logger, { error as logError } from '@promptx/logger';
+import { toToolWithHandler, type MapToolRegistry } from '../registry/ToolRegistry.js';
 
 export interface PersengServerOptions {
   // 基础选项
@@ -34,7 +35,14 @@ export interface PersengServerOptions {
 export class PersengMCPServer {
   private server: MCPServer;
   private options: PersengServerOptions;
-  
+  /**
+   * KNUTH-FEAT 2026-07-11 (批次 1 / 3.1): 工具 registry — 暴露给后续批次
+   * （3.2 ToolContext 注入、3.3 Resource 中心、3.7 manifest 声明）。
+   * 当前 registerTools() 仍走传统 createAllTools() 路径以保持行为完全一致；
+   * 3.2 落地后切换到 registry.list().map(toToolWithHandler) 单路径注入。
+   */
+  private toolRegistry?: MapToolRegistry;
+
   constructor(options: PersengServerOptions) {
     this.options = options;
     
@@ -69,7 +77,11 @@ export class PersengMCPServer {
     // 设置环境变量,供 @promptx/core 的 RolexBridge 读取(注意 env 变量已更名为 PERSENG_*,因 npm 包名不动也算对外暴露的环境变量名)
     process.env.PERSENG_ENABLE_V2 = enableV2 ? '1' : '0';
 
-    const tools = createAllTools(enableV2);
+    // KNUTH-FEAT 2026-07-11 (批次 1 / 3.1): 走 registry 装配路径。
+    // 后续批次 (3.2 ToolContext) 将直接消费 this.toolRegistry.list()。
+    const registry = buildToolRegistry(enableV2);
+    this.toolRegistry = registry;
+    const tools = registry.list().map(toToolWithHandler);
 
     // KNUTH-FEAT 2026-07-11 (M4): 一次性构建 EventBus 并注入到所有工具。
     // 失败被 swallow — bus 缺失不应阻断工具注册。
@@ -142,6 +154,15 @@ export class PersengMCPServer {
    */
   getServer(): MCPServer {
     return this.server;
+  }
+
+  /**
+   * KNUTH-FEAT 2026-07-11 (批次 1 / 3.1): 暴露 tool registry。
+   * 后续批次（3.2 ToolContext、3.5 ToolEventBus subscribe、3.7 manifest）
+   * 通过此 getter 拿 registry 喂入上下文；测试也能 dump 当前工具装配。
+   */
+  getToolRegistry(): MapToolRegistry | undefined {
+    return this.toolRegistry;
   }
   
   // ========== 静态方法 ==========
