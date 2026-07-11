@@ -108,27 +108,63 @@ async function main() {
   fs.rmSync(tmpDir, { recursive: true, force: true })
 
   // 6) 验证
-  // KNUTH-FIX 2026-07-09: createPackage 后 listPackage 偶发读到旧 asar
-  // (race condition: 文件已经原子 rename 过去, 但 Node FS cache / Windows
-  // mmap 还没刷新)。最多重试 5 次, 每次间隔 100ms。
-  const stubBackVerify = STUB_REL_PATH_IN_ASAR.replace(/\//g, '\\')
-  const stubTargetVerify = '\\' + stubBackVerify
-  let verified = false
-  for (let i = 0; i < 5; i++) {
-    const verifyList = asar.listPackage(asarPath, { isPack: true })
-    verified = verifyList.some(
-      (p) => p === stubTargetVerify || p.endsWith(' ' + stubTargetVerify) || p.endsWith(':' + stubTargetVerify)
-    )
-    if (verified) break
-    await new Promise((r) => setTimeout(r, 100))
+  // KNUTH-FIX 2026-07-11: verify 从"listing 存在性"升级到"内容字节比对" +
+  // 指数退避 + cache-busting + 分模态诊断。
+  // 关键改进:
+  //  - extractFile 比 listPackage 强: 不依赖 @electron/asar v3+ 的
+  //    "pack   : <path>" 输出格式 (列格式变了就误判), 直接读 stub 字节。
+  //  - 5 次重试, backoff = [100, 200, 400, 800, 1500] ms (总预算 3s),
+  //    应对 createPackage 后 OS cache / Windows mmap 短暂未刷新的 race。
+  //  - 第 1 次重试前 fs.openSync('r') 主动 bust cache, 强制重读磁盘。
+  //  - 失败时一并打: asar stat (size + mtime) + 最后一次错误码 +
+  //    期望 STUB_CONTENT 全文 + 实际内容前 500 字节; 把 "not extracted" /
+  //    "wrong content" / "asar unreadable" 三种失败模态分开。
+  const BACKOFFS_MS = [100, 200, 400, 800, 1500]
+  let actualContent = null
+  let lastErr = null
+  for (let i = 0; i < BACKOFFS_MS.length; i++) {
+    try {
+      if (i === 0) {
+        // cache-busting: 强制 OS 重新从磁盘读文件, 而不是用 FS cache / mmap
+        const fd = fs.openSync(asarPath, 'r')
+        try { fs.fstatSync(fd) } finally { fs.closeSync(fd) }
+      }
+      const buf = asar.extractFile(asarPath, STUB_REL_PATH_IN_ASAR)
+      actualContent = buf.toString('utf-8')
+      lastErr = null
+      break
+    } catch (err) {
+      lastErr = err
+      if (i < BACKOFFS_MS.length - 1) {
+        await new Promise((r) => setTimeout(r, BACKOFFS_MS[i]))
+      }
+    }
   }
+  const verified = actualContent !== null && actualContent === STUB_CONTENT
+
   if (verified) {
-    console.log('[inject-stub] OK: stub verified in repacked asar at', stubTargetVerify)
+    console.log(`[inject-stub] OK: stub verified (${STUB_CONTENT.length} bytes match)`)
   } else {
-    console.error('[inject-stub] FAIL: stub missing after repack.')
-    const verifyList = asar.listPackage(asarPath, { isPack: true })
-    const sample = verifyList.filter((p) => p.includes('@promptx')).slice(0, 10)
-    console.error('[inject-stub]   sample @promptx entries:', sample)
+    console.error(`[inject-stub] FAIL: stub verification failed after ${BACKOFFS_MS.length} attempts`)
+    try {
+      const st = fs.statSync(asarPath)
+      console.error(`[inject-stub]   asar stat: size=${st.size}  mtime=${st.mtime.toISOString()}`)
+    } catch (e) {
+      console.error(`[inject-stub]   asar stat: <unreadable> ${e.message}`)
+    }
+    if (lastErr) {
+      console.error(
+        `[inject-stub]   last extractFile error: ${lastErr.code || lastErr.name || 'unknown'}: ${lastErr.message}`
+      )
+    }
+    console.error(`[inject-stub]   expected STUB_CONTENT (${STUB_CONTENT.length} bytes, full):`)
+    console.error(STUB_CONTENT)
+    if (actualContent !== null) {
+      console.error('[inject-stub]   actual content (first 500 bytes):')
+      console.error(actualContent.slice(0, 500))
+    } else {
+      console.error('[inject-stub]   actual content: <not extracted>')
+    }
     process.exitCode = 1
   }
 }
