@@ -19,14 +19,20 @@ import type {
   ServerMetrics,
   SessionContext
 } from '~/interfaces/MCPServer.js';
-import { 
-  MCPError, 
-  ToolExecutionError, 
+import {
+  MCPError,
+  ToolExecutionError,
   ResourceAccessError,
   ErrorHelper,
-  ErrorSeverity 
+  ErrorSeverity
 } from '~/errors/MCPError.js';
 import { globalErrorCollector } from '~/errors/ErrorCollector.js';
+import {
+  invokeHandler,
+  NULL_TRACE,
+  createEnvelopeBuilder,
+  type ToolContext,
+} from '~/protocol/ToolContext.js';
 
 /**
  * 基础MCP服务器实现
@@ -337,27 +343,43 @@ export abstract class BaseMCPServer implements MCPServer {
       this.logger.warn(`Attempted to execute tool '${name}' while server is not running`);
       throw new Error('Server is not running');
     }
-    
+
     const tool = this.tools.get(name);
     if (!tool) {
       this.logger.error(`Tool not found: ${name}. Available tools: ${Array.from(this.tools.keys()).join(', ')}`);
       throw new Error(`Tool not found: ${name}`);
     }
-    
+
     const startTime = Date.now();
-    
+
     this.logger.info(`[TOOL_EXEC_START] Tool: ${name}`);
     // KNUTH-FIX 2026-07-06: pino.Logger 不支持 (string, obj) overload
     logDebug(`[TOOL_ARGS] ${name}:`, args);
-    
+
+    // KNUTH-FEAT 2026-07-11 (批次 1 / 3.2): 构造 ToolContext
+    // 当前 trace.correlationId / agentId 等大部分为 null（待 3.3 Resource 中心接入 session）；
+    // 协议存在使工具可读 ctx 而不依赖 await import('@promptx/core')。
+    const toolCtx: ToolContext = {
+      trace: NULL_TRACE,
+      envelope: createEnvelopeBuilder(NULL_TRACE, 'tool:' + name, '2.4.1'),
+      eventBus: null, // M4 已注入 — 走 setter，未注入时为 null
+      logger: this.logger,
+    }
+
     try {
-      const result = await tool.handler(args);
-      
+      // KNUTH-FEAT 2026-07-11 (批次 1 / 3.2): 通过 invokeHandler 自动探测 V1/V2 签名。
+      // V2 签名 `(args, ctx) => ...` 直接喂 ctx；V1 签名 `(args) => ...` 单参调用。
+      // 现有 11 个工具全部是 V1 签名 — 此调用与原 `tool.handler(args)` 等价，
+      // 但路径上 ctx 已构造好（待 3.3 / 3.5 接入 sessionId / eventBus.subscribe）。
+      const result = await invokeHandler(tool.handler, args, toolCtx);
+
       const responseTime = Date.now() - startTime;
       this.logger.info(`[TOOL_EXEC_SUCCESS] Tool: ${name}, Time: ${responseTime}ms`);
       // KNUTH-FIX 2026-07-06: pino overload (string, obj) 不匹配
-      logDebug(`[TOOL_RESULT] ${name}:`, result);
-      
+      // KNUTH-FEAT 2026-07-11 (3.2): invokeHandler 返回 unknown，pino logger 期望
+      // string | object — 走 record cast。
+      logDebug(`[TOOL_RESULT] ${name}:`, result as Record<string, unknown>);
+
       return result;
     } catch (error: any) {
       // 直接失败，不重试，不计数，简单明了
