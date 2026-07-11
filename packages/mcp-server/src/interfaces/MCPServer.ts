@@ -55,9 +55,36 @@ export type ToolWithHandler = Tool & {
 /**
  * 工具埋事件用的最小 EventBus 接口 — 避免 @promptx/mcp-server 强依赖 @promptx/events。
  * 任何 emit-only 的 bus 形状都满足（@promptx/events.InProcessEventBus / 自定义实现）。
+ *
+ * KNUTH-FEAT 2026-07-11 (批次 2 / RFC 3.5): 扩展订阅侧 API
+ * - on(type, handler)        监听特定 type
+ * - onAny(handler)           监听所有 type
+ * - onProducer(producer, h)  按 envelope.producer 字段过滤
+ * - 返回 unsubscribe 函数（与 mitt API 一致）
+ *
+ * 向后兼容：emit-only 实现仅满足 `emit`，仍可注入；缺 on* 时工具降级为"不订阅"。
+ * ToolEventBusAdapter 把 InProcessEventBus 适配到完整接口。
  */
 export interface ToolEventBus {
   emit(envelope: Record<string, unknown>): void | Promise<void>
+
+  /**
+   * 订阅特定 type 事件（v2 envelope.type）。
+   * 返回 unsubscribe 函数；调用后停止投递（但不删除已发事件）。
+   */
+  on?(type: string, handler: (envelope: Record<string, unknown>) => void): () => void
+
+  /**
+   * 订阅所有事件（type = '*'）。
+   * 用于跨 producer 的日志/审计/sink。
+   */
+  onAny?(handler: (envelope: Record<string, unknown>) => void): () => void
+
+  /**
+   * 按 envelope.producer 字段订阅（如 'tool:action' / 'core:actAs'）。
+   * 只对 V2 envelope 形状有效；旧 envelope 无 producer 字段则永远不会触发。
+   */
+  onProducer?(producer: string, handler: (envelope: Record<string, unknown>) => void): () => void
 }
 
 /**
