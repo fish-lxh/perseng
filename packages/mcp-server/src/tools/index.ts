@@ -1,23 +1,19 @@
 /**
- * 工具集合导出
+ * 工具集合导出 — manifest-first 装配 (3.7 P2)
  *
- * KNUTH-FEAT 2026-07-11 (批次 1 / RFC 目标 3.1):
- * `createAllTools(enableV2)` 内部走 MapToolRegistry — 把硬编码 ToolWithHandler[]
- * 升级为声明式 registry 装配。
+ * KNUTH-FEAT 2026-07-11 (RFC 目标 3 / 批次 3):
+ * tools/index.ts 现在从 ALL_MANIFESTS 拿到 tool metadata，handler 通过 name
+ * 派生；保证装配顺序由 manifest 决定（稳定）。
  *
- * 行为保持不变：仍然返回 ToolWithHandler[]，向后兼容。
- * 后续批次（3.7 manifest 声明）会细化每个工具的 manifest；本批次只把装配点
- * 移到 registry，使 PersengMCPServer 后续能直接消费 registry.list()。
+ * 行为保持不变：createAllTools 仍返回 ToolWithHandler[]；
+ * PersengMCPServer 通过 registry 单一入口消费。
  */
 
 // Perseng 核心工具
 export { discoverTool, createDiscoverTool } from './welcome.js';
 export { actionTool, createActionTool } from './action.js';
-// projectTool 已从 MCP 工具列表剔除（§14.1 优化）：工作区绑定由 CLI/Desktop 启动时
-// 自动注入（cli.execute('project')），不再暴露给大模型以减少 base token。
-// CLI 命令 `promptx project <path>` 仍走 cli.execute('project')，project.ts 实现保留。
-// export { projectTool } from './project.js';
-// export { learnTool } from './learn.js';  // 暂时禁用 learn 工具
+// projectTool 已从 MCP 工具列表剔除（§14.1 优化）
+// CLI 命令 `promptx project <path>` 仍走 cli.execute('project')
 export { recallTool } from './recall.js';
 export { rememberTool } from './remember.js';
 export { toolxTool } from './toolx.js';
@@ -28,10 +24,11 @@ export { lifecycleTool, createLifecycleTool } from './lifecycle.js';
 export { learningTool, createLearningTool } from './learning.js';
 export { organizationTool, createOrganizationTool } from './organization.js';
 
+// Manifest 聚合 — 给外部做 capability 查询用
+export { ALL_MANIFESTS, findManifestsByCapability } from './manifests.js';
+
 import { createDiscoverTool } from './welcome.js';
 import { createActionTool } from './action.js';
-// import { projectTool } from './project.js';  // §14.1: 不再注册给大模型
-// import { learnTool } from './learn.js';  // 暂时禁用 learn 工具
 import { recallTool } from './recall.js';
 import { rememberTool } from './remember.js';
 import { toolxTool } from './toolx.js';
@@ -40,67 +37,53 @@ import { createLifecycleTool } from './lifecycle.js';
 import { createLearningTool } from './learning.js';
 import { createOrganizationTool } from './organization.js';
 import type { ToolWithHandler } from '~/interfaces/MCPServer.js';
-import { MapToolRegistry, toToolWithHandler } from '~/registry/ToolRegistry.js';
+import {
+  MapToolRegistry,
+  toToolWithHandler,
+  type ToolRegistration,
+} from '~/registry/ToolRegistry.js';
+import { ALL_MANIFESTS } from './manifests.js';
 
 /**
- * KNUTH-FEAT 2026-07-11 (批次 1 / 3.1):
- * 把每个工具的 ToolWithHandler 抽成 ToolRegistration，注册进 registry，
- * 然后用 toToolWithHandler 适配器把 registry 还原为 ToolWithHandler[]。
- *
- * 当前 manifest 字段是 placeholder（_manifestFor 内部按工具静态导出派生），
- * 等 3.7 工具 manifest 声明落地后再切换到 manifest.ts 导入。本批次保留
- * 装配点 + 测试覆盖，manifest 字段后续只是数据源切换。
+ * KNUTH-FEAT 2026-07-11 (3.7 P2): handler 由 manifest name 派生；
+ * 装配顺序由 ALL_MANIFESTS 索引顺序决定（按 capability / 依赖稳定排序）。
  */
-function _manifestFor(tool: { name: string; description?: string; inputSchema: unknown }, capabilities: string[] = []) {
-  return {
-    name: tool.name,
-    version: '2.4.1',
-    capabilities,
-    dependencies: [],
-    schemaVersion: 1 as const,
-    inputSchema: tool.inputSchema as Parameters<typeof toToolWithHandler>[0]['manifest']['inputSchema'],
+function handlerByName(name: string, enableV2: boolean): ToolWithHandler | null {
+  switch (name) {
+    case 'discover':       return createDiscoverTool(enableV2)
+    case 'action':         return createActionTool(enableV2)
+    case 'recall':         return recallTool
+    case 'remember':       return rememberTool
+    case 'toolx':          return toolxTool
+    case 'timeline':       return queryTimelineTool
+    case 'lifecycle':      return enableV2 ? createLifecycleTool(enableV2) : null
+    case 'learning':       return enableV2 ? createLearningTool(enableV2) : null
+    case 'organization':   return enableV2 ? createOrganizationTool(enableV2) : null
+    default:                return null
   }
 }
 
 /**
- * 根据 enableV2 标志创建工具列表（行为不变；装配路径走 MapToolRegistry）。
- *
- * 未来批次 PersengMCPServer.registerTools() 可直接复用 buildToolRegistry(enableV2)
- * 拿到 registry + tools，免去两轮遍历。
+ * 装配 MapToolRegistry：按 ALL_MANIFESTS 顺序遍历，按 name 找到 handler 注册。
+ * enableV2 关闭时跳过 lifecycle / learning / organization。
  */
 export function buildToolRegistry(enableV2: boolean): MapToolRegistry {
   const registry = new MapToolRegistry()
-  const register = (tool: ToolWithHandler, capabilities: string[] = []) => {
-    registry.register({
-      manifest: _manifestFor(tool, capabilities),
+  for (const manifest of ALL_MANIFESTS) {
+    const tool = handlerByName(manifest.name, enableV2)
+    if (!tool) continue
+    const reg: ToolRegistration = {
+      manifest,
       handler: tool.handler,
       setEventBus: tool.setEventBus as unknown as ((bus: unknown) => void) | undefined,
-    })
+    }
+    registry.register(reg)
   }
-
-  // Always-on tools
-  register(createDiscoverTool(enableV2), ['role:discover', 'role:welcome'])
-  register(createActionTool(enableV2), ['role:activate', 'role:born', 'role:identity', 'role:archive', 'role:delete'])
-  // projectTool // §14.1: 不再下发
-  // learnTool  // 暂时禁用
-  register(recallTool, ['memory:recall'])
-  register(rememberTool, ['memory:remember'])
-  register(toolxTool, ['tool:execute'])
-  register(queryTimelineTool, ['timeline:query'])
-  register(clearTimelineTool, ['timeline:clear'])
-
-  if (enableV2) {
-    register(createLifecycleTool(enableV2), ['lifecycle:goal', 'lifecycle:plan', 'lifecycle:todo'])
-    register(createLearningTool(enableV2), ['learning:reflect', 'learning:distill'])
-    register(createOrganizationTool(enableV2), ['organization:memory', 'organization:resource'])
-  }
-
   return registry
 }
 
 /**
- * 向后兼容：保持 ToolWithHandler[] 返回类型。
- * PersengMCPServer.registerTools() 现在可以同时拿到 registry（如果改用 buildToolRegistry）。
+ * 向后兼容 — 返回 ToolWithHandler[]。
  */
 export function createAllTools(enableV2: boolean): ToolWithHandler[] {
   return buildToolRegistry(enableV2).list().map(toToolWithHandler)
