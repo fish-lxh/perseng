@@ -22,12 +22,11 @@ const DPMLContentParser = (require('../../dpml/DPMLContentParser') as { DPMLCont
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const SemanticRenderer = (require('../../dpml/SemanticRenderer') as { SemanticRenderer: new () => SemanticRendererLike })
   .SemanticRenderer
+// KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — ProjectManager 真实 .d.ts 已生成, require() 直接出类型。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const ProjectManager = require('~/project/ProjectManager') as unknown as ProjectManagerLike
+const ProjectManager = require('~/project/ProjectManager')
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { getGlobalProjectManager } = require('~/project/ProjectManager') as {
-  getGlobalProjectManager(): ProjectManagerLike
-}
+const { getGlobalProjectManager } = require('~/project/ProjectManager')
 
 /** ResourceManager 鸭子类型 */
 interface ResourceManagerLike {

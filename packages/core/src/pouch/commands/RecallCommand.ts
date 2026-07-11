@@ -19,8 +19,9 @@ import * as logger from '@promptx/logger'
 const { getGlobalResourceManager } = require('../../resource') as {
   getGlobalResourceManager(): ResourceManagerLike
 }
+// KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — CognitionManager 真实 .d.ts 已生成。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const CognitionManager = require('../../cognition/CognitionManager') as unknown as CognitionManagerLike
+const CognitionManager = require('../../cognition/CognitionManager')
 
 /** ResourceManager 鸭子类型 */
 interface ResourceManagerLike {

@@ -8,29 +8,11 @@
 import * as logger from '@promptx/logger'
 import { getRolexBridge, RolexBridge } from './RolexBridge'
 
-// RoleLifecycle 仍在 ../resource/lifecycle/RoleLifecycle.js (Phase 4 范围)，
-// 用 const+require 避免 consumers rootDir TS6059。
+// KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — RoleLifecycle 真实 .d.ts (Phase 2b 从 JSDoc+tsc 生成) 已含
+// archiveBatch / unarchiveBatch / deleteBatch 等完整签名, 不再需要鸭子类型。
+// 用 const+require 是为了避免 apps/cli TS6059 rootDir 拉入 src 子目录。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const RoleLifecycle = require('../resource/lifecycle/RoleLifecycle') as unknown as {
-  archiveBatch(
-    roleIds: string[],
-  ): Promise<Array<{ ok: boolean; version?: string; id?: string; error?: string }>>
-  unarchiveBatch(
-    roleIds: string[],
-  ): Promise<Array<{ ok: boolean; version?: string; id?: string; error?: string }>>
-  deleteBatch(
-    roleIds: string[],
-    options: { force: boolean },
-  ): Promise<
-    Array<{
-      ok: boolean
-      version?: string
-      id?: string
-      error?: string
-      protected?: boolean
-    }>
-  >
-}
+const RoleLifecycle = require('../resource/lifecycle/RoleLifecycle')
 
 export type DispatchOperation =
   | 'activate'
@@ -252,7 +234,7 @@ export class RolexActionDispatcher {
     // 单条归档失败不影响 born 结果（V2 已创建，V1 归档是可恢复的标记）。
     if (Array.isArray(args.archiveV1) && args.archiveV1.length > 0) {
       const archiveResults = await RoleLifecycle.archiveBatch(args.archiveV1)
-      const failed = archiveResults.filter((r) => !r.ok)
+      const failed = archiveResults.filter((r: any) => !r.ok)
       if (failed.length > 0) {
         logger.warn(
           `[RolexActionDispatcher] born "${args.name}" succeeded but ${failed.length}/${archiveResults.length} V1 archive failed:`,
@@ -492,7 +474,7 @@ export class RolexActionDispatcher {
       throw new Error('roleIds (non-empty array) is required for archive operation')
     }
     const results = await RoleLifecycle.archiveBatch(args.roleIds)
-    const failures = results.filter((r) => !r.ok)
+    const failures = results.filter((r: any) => !r.ok)
     if (failures.length > 0) {
       logger.warn(
         `[RolexActionDispatcher] archive ${failures.length}/${results.length} failed:`,
@@ -510,7 +492,7 @@ export class RolexActionDispatcher {
       throw new Error('roleIds (non-empty array) is required for unarchive operation')
     }
     const results = await RoleLifecycle.unarchiveBatch(args.roleIds)
-    const failures = results.filter((r) => !r.ok)
+    const failures = results.filter((r: any) => !r.ok)
     if (failures.length > 0) {
       logger.warn(
         `[RolexActionDispatcher] unarchive ${failures.length}/${results.length} failed:`,
@@ -536,8 +518,8 @@ export class RolexActionDispatcher {
     }
     const force = !!args.force
     const results = await RoleLifecycle.deleteBatch(args.roleIds, { force })
-    const failures = results.filter((r) => !r.ok)
-    const protectedCount = results.filter((r) => r.protected).length
+    const failures = results.filter((r: any) => !r.ok)
+    const protectedCount = results.filter((r: any) => r.protected).length
     if (protectedCount > 0 && !force) {
       logger.warn(
         `[RolexActionDispatcher] delete denied for ${protectedCount} protected role(s) (force=false). Pass force=true to override.`,

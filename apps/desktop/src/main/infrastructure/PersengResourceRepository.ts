@@ -100,9 +100,8 @@ export class PersengResourceRepository implements ResourceRepository {
 
   private getDiscoverCommand() {
     if (!this.discoverCommand) {
-      // 动态导入 DiscoverCommand from core package
-      const core = require('@promptx/core')
-      const { DiscoverCommand } = core.pouch.commands
+      // KNUTH-FEAT 2026-07-11: Phase 3 桌面兼容链清理 — 直接走 @promptx/core/pouch 子路径。
+      const { DiscoverCommand } = require('@promptx/core/pouch')
       this.discoverCommand = new DiscoverCommand()
     }
     return this.discoverCommand

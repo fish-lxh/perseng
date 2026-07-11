@@ -24,10 +24,9 @@ import { BaseLayer } from './BaseLayer.js'
 import type { BaseLayerMetadata } from './BaseLayer.js'
 import * as logger from '@promptx/logger'
 
+// KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — Consciousness 真实 .d.ts 已生成, 直接取静态方法。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const Consciousness = require('../../cognition/Consciousness') as unknown as {
-  getConsciousnessPrompt(): string
-}
+const Consciousness = require('../../cognition/Consciousness')
 
 /** 注入模式 */
 export type InjectionMode = 'guided' | 'first-person' | 'comment' | 'visible' | 'none'

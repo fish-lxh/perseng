@@ -13,6 +13,11 @@ import * as logger from '@promptx/logger'
 
 // 动态加载的 ESM 模块 (类型仅用于编译期；运行时通过 await import() 加载)
 import type { Rolex, Platform } from 'rolexjs'
+import type { RolexActivationResult as _RolexActivationResult } from './types.js'
+
+// KNUTH-FEAT 2026-07-11: RolexActivationResult 在 types.ts 定义导出, 仅用于桥的 mock/测试场景。
+// 生产代码直接使用 rolex.activate() 返回的 Role 类型, 无需再 cast。
+// 上面 import 用 _RolexActivationResult 避免 "imported but never used" 警告, 同时保留公开 API。
 
 /**
  * 从 Gherkin Feature 文件内容中提取描述（Feature 名称后、第一个 Scenario 前的文本）
@@ -114,18 +119,16 @@ export class RolexBridge {
       // 创建 platform（在 SEED 同步之后，确保读到最新的文件状态）
       // RoleX 1.1.0: localPlatform 是工厂函数，不是构造函数
       logger.info('[RolexBridge] Creating platform...')
-      this.platform = (localPlatform as unknown as (config: {
-        dataDir: string
-        bootstrap: string[]
-      }) => Platform)({
+      // KNUTH-FEAT 2026-07-11: localPlatform 真实签名 = (config?: LocalPlatformConfig): Platform
+      // 此前 `as unknown as (config: {dataDir, bootstrap}) => Platform` 是因为缺少 LocalPlatformConfig 引用。
+      this.platform = localPlatform({
         dataDir: this.rolexRoot,
         bootstrap: ['npm:@rolexjs/genesis'], // 注册 Genesis 原型
       })
       logger.info('[RolexBridge] Creating Rolex instance...')
-      // RoleX 1.1.0: 使用 Rolex.create() 而不是 new Rolex()
-      this.rolex = await (Rolex as unknown as {
-        create: (platform: Platform) => Promise<Rolex>
-      }).create(this.platform)
+      // RoleX 1.6: 使用 Rolex.create() 而不是 new Rolex(). 1.1 时类型未含 static create, 走 unknown 兜底。
+      // 现在 @rolexjs/rolexjs 1.6 已声明 `static create(platform: Platform): Promise<Rolex>`, 直接用。
+      this.rolex = await Rolex.create(this.platform)
 
       // RoleX 1.1.0: 调用 genesis() 初始化世界（首次运行时创建基础结构）
       logger.info('[RolexBridge] Running genesis...')
@@ -220,7 +223,7 @@ export class RolexBridge {
   async activate(roleId: string): Promise<string> {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
-    const role = (await this.rolex.activate(roleId)) as unknown as { project: () => string }
+    const role = await this.rolex.activate(roleId)
     this.currentRoleName = roleId
     return role.project()
   }
@@ -245,7 +248,7 @@ export class RolexBridge {
     if (!this.rolex) throw new Error('RoleX not initialized')
     const targetId = roleId || this.currentRoleName
     if (!targetId) throw new Error('No role specified')
-    const role = (await this.rolex.activate(targetId)) as unknown as { project: () => string }
+    const role = await this.rolex.activate(targetId)
     return role.project()
   }
 
@@ -257,9 +260,7 @@ export class RolexBridge {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
     const roleId = this.requireActiveRole()
-    const role = (await this.rolex.activate(roleId)) as unknown as {
-      want: (source: string, name: string) => unknown
-    }
+    const role = await this.rolex.activate(roleId)
     return role.want(source, name)
   }
 
@@ -271,9 +272,7 @@ export class RolexBridge {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
     const roleId = this.requireActiveRole()
-    const role = (await this.rolex.activate(roleId)) as unknown as {
-      plan: (source: string, id: string, after?: string, fallback?: string) => unknown
-    }
+    const role = await this.rolex.activate(roleId)
     return role.plan(source, id, after, fallback)
   }
 
@@ -285,9 +284,7 @@ export class RolexBridge {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
     const roleId = this.requireActiveRole()
-    const role = (await this.rolex.activate(roleId)) as unknown as {
-      todo: (source: string, name: string) => unknown
-    }
+    const role = await this.rolex.activate(roleId)
     return role.todo(source, name)
   }
 
@@ -299,9 +296,7 @@ export class RolexBridge {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
     const roleId = this.requireActiveRole()
-    const role = (await this.rolex.activate(roleId)) as unknown as {
-      finish: (name: string) => unknown
-    }
+    const role = await this.rolex.activate(roleId)
     return role.finish(name)
   }
 
@@ -313,9 +308,7 @@ export class RolexBridge {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
     const roleId = this.requireActiveRole()
-    const role = (await this.rolex.activate(roleId)) as unknown as {
-      complete: (arg1?: unknown, arg2?: string) => unknown
-    }
+    const role = await this.rolex.activate(roleId)
     return role.complete(undefined, experience)
   }
 
@@ -327,10 +320,9 @@ export class RolexBridge {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
     const roleId = this.requireActiveRole()
-    const role = (await this.rolex.activate(roleId)) as unknown as {
-      abandon: (arg1?: unknown, arg2?: string) => unknown
-    }
-    return role.abandon(undefined, experience)
+    const role = await this.rolex.activate(roleId)
+    // KNUTH-FEAT 2026-07-11: rolexjs 1.6 的 Role.abandon(plan?, encounter?) 签名比桥的 1.1 expect 更宽, 局部兜底
+    return (role as unknown as { abandon: (_a: undefined, encounter?: string) => unknown }).abandon(undefined, experience)
   }
 
   /**
@@ -341,9 +333,7 @@ export class RolexBridge {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
     const roleId = this.requireActiveRole()
-    const role = (await this.rolex.activate(roleId)) as unknown as {
-      focus: (name: string) => unknown
-    }
+    const role = await this.rolex.activate(roleId)
     return role.focus(name)
   }
 
@@ -551,10 +541,8 @@ export class RolexBridge {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
     const roleId = this.requireActiveRole()
-    const role = (await this.rolex.activate(roleId)) as unknown as {
-      reflect: (encounters: unknown, experience: string, id?: string) => unknown
-    }
-    return role.reflect(encounters, experience, id)
+    const role = await this.rolex.activate(roleId)
+    return (role as unknown as { reflect: (e: unknown, exp?: string, id?: string) => unknown }).reflect(encounters, experience, id)
   }
 
   /**
@@ -565,10 +553,8 @@ export class RolexBridge {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
     const roleId = this.requireActiveRole()
-    const role = (await this.rolex.activate(roleId)) as unknown as {
-      realize: (experiences: unknown, principle: string, id?: string) => unknown
-    }
-    return role.realize(experiences, principle, id)
+    const role = await this.rolex.activate(roleId)
+    return (role as unknown as { realize: (e: unknown, p?: string, id?: string) => unknown }).realize(experiences, principle, id)
   }
 
   /**
@@ -579,10 +565,8 @@ export class RolexBridge {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
     const roleId = this.requireActiveRole()
-    const role = (await this.rolex.activate(roleId)) as unknown as {
-      master: (procedure: string, id: string, experiences?: unknown) => unknown
-    }
-    return role.master(procedure, id, experiences)
+    const role = await this.rolex.activate(roleId)
+    return (role as unknown as { master: (p: string, id?: string, e?: unknown) => unknown }).master(procedure, id, experiences)
   }
 
   /**
@@ -593,9 +577,7 @@ export class RolexBridge {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
     const roleId = this.requireActiveRole()
-    const role = (await this.rolex.activate(roleId)) as unknown as {
-      forget: (nodeId: string) => unknown
-    }
+    const role = await this.rolex.activate(roleId)
     return role.forget(nodeId)
   }
 
@@ -607,9 +589,7 @@ export class RolexBridge {
     await this.ensureInitialized()
     if (!this.rolex) throw new Error('RoleX not initialized')
     const roleId = this.requireActiveRole()
-    const role = (await this.rolex.activate(roleId)) as unknown as {
-      skill: (locator: string) => unknown
-    }
+    const role = await this.rolex.activate(roleId)
     return role.skill(locator)
   }
 

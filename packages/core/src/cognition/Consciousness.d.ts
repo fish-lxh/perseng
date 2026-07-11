@@ -1,9 +1,5 @@
-// KNUTH-FEAT 2026-07-11: 自动生成的 .d.ts skeleton。
-// 真实类型请逐步替换 (Phase 2b — 手工优化关键文件)。
-// 来源: cognition/Consciousness.js
+export = Consciousness;
 declare class Consciousness {
-  [k: string]: unknown
+    static getConsciousnessPrompt(): string;
 }
-declare namespace Consciousness {
-}
-export = Consciousness
+//# sourceMappingURL=Consciousness.d.ts.map

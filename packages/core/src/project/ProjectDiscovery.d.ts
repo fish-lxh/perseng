@@ -1,9 +1,19 @@
-// KNUTH-FEAT 2026-07-11: 自动生成的 .d.ts skeleton。
-// 真实类型请逐步替换 (Phase 2b — 手工优化关键文件)。
-// 来源: project/ProjectDiscovery.js
+export = ProjectDiscovery;
 declare class ProjectDiscovery {
-  [k: string]: unknown
+    source: string;
+    priority: number;
+    projectProtocol: any;
+    getProjectProtocol(): any;
+    discoverRegistry(): Promise<Map<any, any>>;
+    loadFromRegistry(): Promise<Map<any, any>>;
+    scanProjectResources(): Promise<any[]>;
+    private _scanDirectory;
+    private _recursiveScan;
+    private _processFile;
+    _validateResourceFile(filePath: string, protocol: string): Promise<boolean>;
+    buildRegistryFromResources(resources: any[]): Map<any, any>;
+    generateRegistry(): Promise<RegistryData>;
+    getRegistryData(): Promise<RegistryData>;
 }
-declare namespace ProjectDiscovery {
-}
-export = ProjectDiscovery
+import RegistryData = require("../resource/RegistryData");
+//# sourceMappingURL=ProjectDiscovery.d.ts.map

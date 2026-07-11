@@ -1,5 +1,19 @@
-// KNUTH-FEAT 2026-07-11: 自动生成的 .d.ts skeleton。
-// 真实类型请逐步替换 (Phase 2b — 手工优化关键文件)。
-// 来源: resource/discovery/UserDiscovery.js
-declare const _default: { [k: string]: unknown }
-export = _default
+export = UserDiscovery;
+declare class UserDiscovery extends BaseDiscovery {
+    userProtocol: any;
+    getUserProtocol(): any;
+    discoverRegistry(): Promise<Map<any, any>>;
+    loadFromRegistry(): Promise<Map<any, any>>;
+    scanUserResources(): Promise<any[]>;
+    private _scanDirectory;
+    private _recursiveScan;
+    private _processFile;
+    _validateResourceFile(filePath: string, protocol: string): Promise<boolean>;
+    buildRegistryFromResources(resources: any[]): Map<any, any>;
+    generateRegistry(): Promise<RegistryData>;
+    getRegistryData(): Promise<RegistryData>;
+    discover(): Promise<any[]>;
+}
+import BaseDiscovery = require("./BaseDiscovery");
+import RegistryData = require("../RegistryData");
+//# sourceMappingURL=UserDiscovery.d.ts.map

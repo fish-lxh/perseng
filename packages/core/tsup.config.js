@@ -14,6 +14,8 @@ export default defineConfig({
     // KNUTH-FEAT 2026-07-11: 暴露子路径给 apps/desktop + 后续 ESM 消费者
     pouch: 'src/pouch/index.ts',
     rolex: 'src/rolex/index.ts',
+    // KNUTH-FEAT 2026-07-11: Phase 3d — 迁 .js → .ts, tsup entry 跟 pouch/rolex 风格一致。
+    project: 'src/project/index.ts',
     actAs: 'src/actAs.ts'
   },
   format: ['cjs'], // 只构建 CommonJS
@@ -54,7 +56,7 @@ export default defineConfig({
   },
   onSuccess: async () => {
     // KNUTH-FEAT 2026-07-11: 通用 ESM wrapper 复制 — 对所有 entry 尝试找 {name}.esm.js
-    const entries = ['index', 'cognition', 'resource', 'toolx', 'pouch', 'rolex', 'actAs']
+    const entries = ['index', 'cognition', 'resource', 'toolx', 'pouch', 'rolex', 'project', 'actAs']
     for (const name of entries) {
       const wrapper = `./src/${name}.esm.js`
       if (fs.existsSync(wrapper)) {

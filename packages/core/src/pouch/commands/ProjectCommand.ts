@@ -20,14 +20,13 @@ const { getGlobalResourceManager } = require('../../resource') as {
 const { PACKAGE_NAMES } = require('~/constants') as {
   PACKAGE_NAMES: Record<string, string>
 }
+// KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — ProjectDiscovery / ProjectManager 真实 .d.ts 已生成。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const ProjectDiscovery = require('../../project/ProjectDiscovery') as unknown as new () => ProjectDiscoveryLike
+const ProjectDiscovery = require('../../project/ProjectDiscovery')
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const ProjectManager = require('~/project/ProjectManager') as unknown as ProjectManagerLike
+const ProjectManager = require('~/project/ProjectManager')
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { getGlobalProjectManager } = require('~/project/ProjectManager') as {
-  getGlobalProjectManager(): ProjectManagerLike
-}
+const { getGlobalProjectManager } = require('~/project/ProjectManager')
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const path = require('path') as typeof import('path')
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -177,7 +176,7 @@ export class ProjectCommand extends BasePouchCommand {
     // init 只负责项目环境初始化，不负责资源发现
 
     // 生成配置文件名
-    const configFileName = this.projectManager.generateConfigFileName(
+    const configFileName = this.projectManager!.generateConfigFileName(
       projectConfig.mcpId,
       ideType,
       projectPath,

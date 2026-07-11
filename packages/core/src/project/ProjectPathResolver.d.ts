@@ -1,9 +1,37 @@
-// KNUTH-FEAT 2026-07-11: 自动生成的 .d.ts skeleton。
-// 真实类型请逐步替换 (Phase 2b — 手工优化关键文件)。
-// 来源: project/ProjectPathResolver.js
+export = ProjectPathResolver;
 declare class ProjectPathResolver {
-  [k: string]: unknown
+    projectDirs: {
+        root: string;
+        src: string;
+        lib: string;
+        build: string;
+        dist: string;
+        docs: string;
+        test: string;
+        tests: string;
+        spec: string;
+        config: string;
+        scripts: string;
+        assets: string;
+        public: string;
+        static: string;
+        templates: string;
+        examples: string;
+        tools: string;
+        '.perseng': string;
+    };
+    resolvePath(resourcePath: string): string;
+    getProjectRoot(): string;
+    getPersengDirectory(): string;
+    getResourceDirectory(): string;
+    getRegistryPath(): string;
+    getMemoryDirectory(): string;
+    private _validatePath;
+    getSupportedDirectories(): Array<string>;
+    isSupportedDirectory(dirType: string): boolean;
 }
 declare namespace ProjectPathResolver {
+    export { getGlobalProjectPathResolver };
 }
-export = ProjectPathResolver
+declare function getGlobalProjectPathResolver(): ProjectPathResolver;
+//# sourceMappingURL=ProjectPathResolver.d.ts.map

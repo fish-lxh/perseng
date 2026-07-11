@@ -13,13 +13,11 @@ import * as logger from '@promptx/logger'
 const { getGlobalResourceManager } = require('../../resource') as {
   getGlobalResourceManager(): ResourceManagerLike
 }
+// KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — ToolSandbox / ToolManualFormatter 真实 .d.ts 已生成。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const ToolSandbox = require('~/toolx/ToolSandbox') as unknown as new (
-  toolResource: string,
-  opts?: { timeout?: number; rebuild?: boolean },
-) => ToolSandboxLike
+const ToolSandbox = require('~/toolx/ToolSandbox')
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const ToolManualFormatter = require('~/toolx/ToolManualFormatter') as unknown as new () => ToolManualFormatterLike
+const ToolManualFormatter = require('~/toolx/ToolManualFormatter')
 
 /** ResourceManager 鸭子类型 */
 interface ResourceManagerLike {
@@ -29,41 +27,11 @@ interface ResourceManagerLike {
   [key: string]: unknown
 }
 
-/** ToolSandbox 鸭子类型 */
-interface ToolSandboxLike {
-  toolInstance?: { [key: string]: unknown }
-  setResourceManager(rm: ResourceManagerLike): void
-  analyze(): Promise<{ toolId: string }>
-  prepareDependencies(): Promise<void>
-  execute(parameters: Record<string, unknown>): Promise<unknown>
-  cleanup(): Promise<void>
-  clearSandbox(removeDir: boolean): Promise<void>
-  configureEnvironment(parameters: Record<string, unknown>): Promise<{
-    action: 'get' | 'set' | 'clear'
-    variables?: Record<string, { configured: boolean; required: boolean; default?: unknown; value?: unknown; description?: string }>
-    summary?: { total: number; configured: number; required: number; missing: number }
-    envPath?: string
-    message?: string
-    configured?: string[]
-  }>
-  queryLogs(parameters: Record<string, unknown>): Promise<unknown>
-  dryRun(parameters: Record<string, unknown>): Promise<{
-    success: boolean
-    result?: unknown
-    bridgeTests?: {
-      summary: { total: number; success: number; failed: number }
-      results: Record<string, { success: boolean }>
-    }
-    message?: string
-    error?: unknown
-  }>
-  getAnalysisResult(): { toolId: string }
-}
-
-/** ToolManualFormatter 鸭子类型 */
-interface ToolManualFormatterLike {
-  format(toolInstance: { [key: string]: unknown }, toolResource: string, sourceCode: string | null): string
-}
+/**
+ * KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — ToolSandbox / ToolManualFormatter 改用具名类型
+ * (typeof ToolSandbox / typeof ToolManualFormatter) 后, 鸭子类型不再需要。
+ * ToolManualFormatter.format() 的 sourceCode 为 string | null 通过局部 cast 单独处理, 不在此处留鸭子。
+ */
 
 /** Tool 工具结果 */
 interface ToolResult {
@@ -455,7 +423,7 @@ ${JSON.stringify(actualToolResult, null, 2)}
     timeout: number,
     startTime: number,
   ): Promise<ToolSuccessResult> {
-    let sandbox: ToolSandboxLike | null = null
+    let sandbox: typeof ToolSandbox | null = null
 
     try {
       sandbox = new ToolSandbox(tool_resource, { timeout })
@@ -482,7 +450,7 @@ ${JSON.stringify(actualToolResult, null, 2)}
    * Manual模式 - 从工具接口自动生成手册
    */
   async executeManualMode(tool_resource: string, startTime: number): Promise<ToolSuccessResult> {
-    let sandbox: ToolSandboxLike | null = null
+    let sandbox: typeof ToolSandbox | null = null
 
     try {
       sandbox = new ToolSandbox(tool_resource)
@@ -547,7 +515,7 @@ ${JSON.stringify(actualToolResult, null, 2)}
     parameters: Record<string, unknown>,
     startTime: number,
   ): Promise<ToolSuccessResult> {
-    let sandbox: ToolSandboxLike | null = null
+    let sandbox: typeof ToolSandbox | null = null
 
     try {
       sandbox = new ToolSandbox(tool_resource)
@@ -583,7 +551,7 @@ ${JSON.stringify(actualToolResult, null, 2)}
     timeout: number,
     startTime: number,
   ): Promise<ToolSuccessResult> {
-    let sandbox: ToolSandboxLike | null = null
+    let sandbox: typeof ToolSandbox | null = null
 
     try {
       sandbox = new ToolSandbox(tool_resource, { timeout, rebuild: true })
@@ -616,7 +584,7 @@ ${JSON.stringify(actualToolResult, null, 2)}
     parameters: Record<string, unknown>,
     startTime: number,
   ): Promise<ToolSuccessResult> {
-    let sandbox: ToolSandboxLike | null = null
+    let sandbox: typeof ToolSandbox | null = null
 
     try {
       sandbox = new ToolSandbox(tool_resource)
@@ -643,7 +611,7 @@ ${JSON.stringify(actualToolResult, null, 2)}
     parameters: Record<string, unknown>,
     startTime: number,
   ): Promise<ToolSuccessResult | ToolErrorResult> {
-    let sandbox: ToolSandboxLike | null = null
+    let sandbox: typeof ToolSandbox | null = null
 
     try {
       sandbox = new ToolSandbox(tool_resource)

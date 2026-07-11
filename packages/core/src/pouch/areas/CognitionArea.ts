@@ -21,13 +21,9 @@
 import * as logger from '@promptx/logger'
 import { BaseArea } from './BaseArea.js'
 
+// KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — CognitivePrompts 真实 .d.ts 已生成, 静态方法全部具名类型。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const CognitivePrompts = require('../../cognition/CognitivePrompts') as unknown as {
-  getPrimeGuideHint(): string
-  getRecallFoundHint(): string
-  getRecallEmptyHint(roleId: string): string
-  getRememberSuccessHint(): string
-}
+const CognitivePrompts = require('../../cognition/CognitivePrompts')
 
 /** 记忆片段（engram） */
 export interface Engram {

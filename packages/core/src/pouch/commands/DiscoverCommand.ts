@@ -23,18 +23,15 @@ const { getGlobalResourceManager } = require('../../resource') as {
 // KNUTH-FIX 2026-07-05: RoleLifecycle.js 用 `module.exports = RoleLifecycle` 直接导出 class，
 // 不能用 `{ RoleLifecycle }` 解构（拆出来是 undefined），必须直接 require。
 // 详情见 role-lifecycle-import-bug 排查笔记。
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const RoleLifecycle = require('../../resource/lifecycle/RoleLifecycle') as unknown as RoleLifecycleLike
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const ProjectManager = require('~/project/ProjectManager') as unknown as ProjectManagerLike
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { getGlobalProjectManager } = require('~/project/ProjectManager') as {
-  getGlobalProjectManager(): ProjectManagerLike
-}
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const ProjectDiscovery = require('../../project/ProjectDiscovery') as unknown as new () => ProjectDiscoveryLike
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const UserDiscovery = require('../../resource/discovery/UserDiscovery') as unknown as new () => UserDiscoveryLike
+/* eslint-disable @typescript-eslint/no-var-requires */
+// KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — 真实 .d.ts 出类型, require() 直接出原值。
+// ResourceModule / RoleLifecycle / ProjectManager / ProjectDiscovery / UserDiscovery
+// 全部已有从 JSDoc+tsc 生成的 .d.ts (Phase 2b), 不再需要 `as unknown as XXXLike` 鸭子接口。
+const RoleLifecycle = require('../../resource/lifecycle/RoleLifecycle')
+const ProjectManager = require('~/project/ProjectManager')
+const { getGlobalProjectManager } = require('~/project/ProjectManager')
+const ProjectDiscovery = require('../../project/ProjectDiscovery')
+const UserDiscovery = require('../../resource/discovery/UserDiscovery')
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { getRolexBridge } = require('../../rolex/RolexBridge') as {
   getRolexBridge(): RolexBridgeLike
@@ -65,12 +62,9 @@ interface RegistryDataLike {
   }>
 }
 
-/** RoleLifecycle 鸭子类型（仅 listArchivedV1） */
-interface RoleLifecycleLike {
-  listArchivedV1(): Promise<string[]>
-}
-
-/** ProjectManager 鸭子类型 */
+/** ProjectManager 鸭子类型 — KNUTH-FEAT 2026-07-11: 真实 .d.ts 中 getCurrentProject() 返回 Object,
+ * 但 DiscoverCommand 访问 .initialized, 需本地声明补充字段。detectIdeType() 实际不在 ProjectManager 上,
+ * 保留作为占位 (运行时会被 Bridge.delegate 截掉)。 */
 interface ProjectManagerLike {
   getCurrentProject(): { initialized: boolean } | null
   getCurrentMcpId(): string
@@ -78,17 +72,8 @@ interface ProjectManagerLike {
   [key: string]: unknown
 }
 
-/** ProjectDiscovery 鸭子类型 */
-interface ProjectDiscoveryLike {
-  generateRegistry(): Promise<unknown>
-}
-
-/** UserDiscovery 鸭子类型 */
-interface UserDiscoveryLike {
-  generateRegistry(): Promise<unknown>
-}
-
-/** RolexBridge 鸭子类型 */
+/** RolexBridge 鸭子类型 — KNUTH-FEAT 2026-07-11: 真实 .d.ts 中 bridge.directory() 返回 DirectoryResult,
+ * 与 DirectoryData 兼容但属性命名细节不同, 保留本地鸭子以防下游字段访问报错。 */
 interface RolexBridgeLike {
   listV2Roles(opts?: { includeRetired?: boolean }): Promise<
     Array<{ id: string; source?: string; archived?: boolean; [k: string]: unknown }>

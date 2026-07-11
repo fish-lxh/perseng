@@ -206,8 +206,8 @@ export class ResourceListWindow {
           return { success: false, message: 'Tool ID is required' }
         }
 
-        const core = require('@promptx/core')
-        const cli = core.pouch?.cli || core.cli || core.default?.cli
+        // KNUTH-FEAT 2026-07-11: Phase 3 桌面兼容链清理 — 直接走 @promptx/core/pouch 子路径 (Phase 1 暴露)。
+        const { cli } = require('@promptx/core/pouch')
         if (!cli || !cli.execute) {
           return { success: false, message: 'CLI not available in @promptx/core' }
         }
@@ -251,8 +251,8 @@ export class ResourceListWindow {
           return { success: false, message: 'Tool ID is required' }
         }
 
-        const core = require('@promptx/core')
-        const cli = core.pouch?.cli || core.cli || core.default?.cli
+        // KNUTH-FEAT 2026-07-11: Phase 3 桌面兼容链清理 — 直接走 @promptx/core/pouch 子路径 (Phase 1 暴露)。
+        const { cli } = require('@promptx/core/pouch')
         if (!cli || !cli.execute) {
           return { success: false, message: 'CLI not available in @promptx/core' }
         }
@@ -519,8 +519,8 @@ export class ResourceListWindow {
 
         // 刷新资源发现，确保UI能看到最新列表
         try {
-          const core = require('@promptx/core')
-          const { DiscoverCommand } = core.pouch.commands
+          // KNUTH-FEAT 2026-07-11: Phase 3 桌面兼容链清理 — 直接走 @promptx/core/pouch 子路径。
+          const { DiscoverCommand } = require('@promptx/core/pouch')
           const discover = new DiscoverCommand()
           await discover.refreshAllResources()
         } catch (refreshErr) {
@@ -848,8 +848,7 @@ export class ResourceListWindow {
 
           // 刷新资源发现
           try {
-            const core = require('@promptx/core')
-            const { DiscoverCommand } = core.pouch.commands
+            const { DiscoverCommand } = require('@promptx/core/pouch')
             const discover = new DiscoverCommand()
             await discover.refreshAllResources()
           } catch (refreshErr) {
@@ -1166,8 +1165,9 @@ export class ResourceListWindow {
     ipcMain.handle('rolex:getIdentityNodes', async (_evt, payload: { roleId: string }) => {
       try {
         assertSafeResourceId(payload.roleId)
-        const core = require('@promptx/core')
-        const bridge = core.rolex.getRolexBridge()
+        // KNUTH-FEAT 2026-07-11: Phase 3 桌面兼容链清理 — 直接走 @promptx/core/rolex 子路径。
+        const { getRolexBridge } = require('@promptx/core/rolex')
+        const bridge = getRolexBridge()
         const identityText = await bridge.identity(payload.roleId)
         console.log('[rolex:getIdentityNodes] roleId:', payload.roleId)
         console.log('[rolex:getIdentityNodes] identityText type:', typeof identityText)

@@ -24,11 +24,12 @@ import * as logger from '@promptx/logger'
 export async function restoreProjectForDesktop(): Promise<boolean> {
   try {
     // 动态加载避免 boot 阶段循环依赖 (@promptx/core 自身在启动早期才完整加载)
+    // KNUTH-FEAT 2026-07-11: Phase 3 桌面兼容链清理 — 直接走 @promptx/core/project 子路径, 不再
+    // 依赖 core.utils.ProjectManager 这条死路径 (utils 对象从未在外暴露过)。
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const core = require('@promptx/core')
-    const ProjectManager = core.utils?.ProjectManager
+    const ProjectManager = require('@promptx/core/project').ProjectManager
     if (!ProjectManager) {
-      logger.debug('[ProjectBinding] @promptx/core utils.ProjectManager 未导出, 跳过')
+      logger.debug('[ProjectBinding] @promptx/core/project ProjectManager 未导出, 跳过')
       return false
     }
 
@@ -41,7 +42,7 @@ export async function restoreProjectForDesktop(): Promise<boolean> {
     const getGlobalProjectManager =
       typeof ProjectManager.getGlobalProjectManager === 'function'
         ? ProjectManager.getGlobalProjectManager
-        : core.utils?.getGlobalProjectManager
+        : require('@promptx/core/project').getGlobalProjectManager
 
     if (typeof getGlobalProjectManager !== 'function') {
       logger.debug('[ProjectBinding] getGlobalProjectManager 不可用, 跳过')

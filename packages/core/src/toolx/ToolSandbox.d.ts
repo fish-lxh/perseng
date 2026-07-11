@@ -1,9 +1,57 @@
-// KNUTH-FEAT 2026-07-11: 自动生成的 .d.ts skeleton。
-// 真实类型请逐步替换 (Phase 2b — 手工优化关键文件)。
-// 来源: toolx/ToolSandbox.js
+export = ToolSandbox;
 declare class ToolSandbox {
-  [k: string]: unknown
+    static create(toolReference: any, options?: {}): Promise<ToolSandbox>;
+    constructor(toolReference: any, options?: {});
+    toolReference: any;
+    resourceManager: any;
+    toolId: any;
+    toolContent: any;
+    toolInstance: any;
+    dependencies: any[];
+    directoryManager: ToolDirectoryManager | null;
+    sandboxPath: any;
+    sandboxContext: import("vm").Context | null;
+    isolationManager: SandboxIsolationManager | null;
+    fs: typeof import("fs") | null;
+    vm: typeof import("vm") | null;
+    logger: typeof import("@promptx/logger") | null;
+    isAnalyzed: boolean;
+    isPrepared: boolean;
+    isInitialized: boolean;
+    options: {
+        timeout: number;
+        enableDependencyInstall: boolean;
+        rebuild: boolean;
+    };
+    init(): Promise<void>;
+    setResourceManager(resourceManager: ResourceManager): void;
+    clearSandbox(deleteDirectory?: boolean): Promise<void>;
+    ensureInitialized(): Promise<void>;
+    analyze(): Promise<Object>;
+    prepareDependencies(): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    configureEnvironment(params?: Object): Promise<Object>;
+    queryLogs(params?: Object): Promise<Object>;
+    dryRun(params?: Object): Promise<Object>;
+    execute(params?: {}): Promise<any>;
+    createExecutionSandbox(): Promise<void>;
+    createBasicSandboxEnvironment(): any;
+    createSmartSandboxEnvironment(): any;
+    extractToolId(toolReference: any): any;
+    parseToolContent(content: any): any;
+    getAnalysisResult(): {
+        toolId: any;
+        dependencies: any[];
+        sandboxPath: any;
+        hasMetadata: boolean;
+        hasSchema: boolean;
+    };
+    installDependencies(): Promise<void>;
+    checkNodeModulesExists(): Promise<boolean>;
+    cleanup(): Promise<void>;
 }
-declare namespace ToolSandbox {
-}
-export = ToolSandbox
+import ToolDirectoryManager = require("./ToolDirectoryManager");
+import SandboxIsolationManager = require("./SandboxIsolationManager");
+//# sourceMappingURL=ToolSandbox.d.ts.map

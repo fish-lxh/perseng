@@ -10,18 +10,12 @@
 import * as fs from 'fs-extra'
 import * as path from 'node:path'
 
+// KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — ProjectManager 真实 .d.ts 已生成 (isInitialized: boolean),
+// resource module 也已经有完整 ResourceManager 类型。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const _projectManager = require('~/project/ProjectManager') as unknown as {
-  isInitialized(): boolean
-}
+const _projectManager = require('~/project/ProjectManager')
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const _resourceModule = require('../../resource') as unknown as {
-  getGlobalResourceManager(): {
-    initialized: boolean
-    initializeWithNewArchitecture(): Promise<void>
-    protocols: Map<string, { resolvePath(p: string): Promise<string> }>
-  }
-}
+const _resourceModule = require('../../resource')
 
 /** PATEOAS 导航片段（仅取 machine 用到的字段） */
 interface CommandPateoas {

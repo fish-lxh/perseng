@@ -1,9 +1,18 @@
-// KNUTH-FEAT 2026-07-11: 自动生成的 .d.ts skeleton。
-// 真实类型请逐步替换 (Phase 2b — 手工优化关键文件)。
-// 来源: toolx/ToolManualFormatter.js
+export = ToolManualFormatter;
 declare class ToolManualFormatter {
-  [k: string]: unknown
+    format(toolInstance: Object, toolResource: string, sourceCode?: string): string;
+    safeGet(instance: any, methodName: any): any;
+    extractComments(sourceCode: any): any;
+    buildMarkdown(data: any): string;
+    formatParameters(params: any): string;
+    collectParameterRows(schema: any, prefix?: string, parentRequired?: any[]): any;
+    formatEnvironment(env: any): string | null;
+    formatDependencies(deps: any): string;
+    formatBusinessErrors(errors: any): string;
+    formatInterfaces(toolInstance: any): string;
+    formatExamples(resource: any, schema: any): string;
+    formatYAMLParams(lines: any, params: any, indent?: string): void;
+    generateExampleParams(paramSchema: any): {};
+    formatType(prop: any): any;
 }
-declare namespace ToolManualFormatter {
-}
-export = ToolManualFormatter
+//# sourceMappingURL=ToolManualFormatter.d.ts.map
