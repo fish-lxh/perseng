@@ -10,7 +10,11 @@ export default defineConfig({
     index: 'src/index.ts',
     cognition: 'src/cognition/index.ts',
     resource: 'src/resource/index.ts',
-    toolx: 'src/toolx/index.ts'
+    toolx: 'src/toolx/index.ts',
+    // KNUTH-FEAT 2026-07-11: 暴露子路径给 apps/desktop + 后续 ESM 消费者
+    pouch: 'src/pouch/index.ts',
+    rolex: 'src/rolex/index.ts',
+    actAs: 'src/actAs.ts'
   },
   format: ['cjs'], // 只构建 CommonJS
   dts: true, // P0 step 0B.6: packages/core 全部 .ts, 启用类型声明
@@ -49,9 +53,14 @@ export default defineConfig({
     }
   },
   onSuccess: async () => {
-    // 复制 ESM wrapper 文件
-    console.log('Copying ESM wrapper...')
-    fs.copyFileSync('./src/index.esm.js', './dist/index.mjs')
-    console.log('ESM wrapper copied to dist/index.mjs')
+    // KNUTH-FEAT 2026-07-11: 通用 ESM wrapper 复制 — 对所有 entry 尝试找 {name}.esm.js
+    const entries = ['index', 'cognition', 'resource', 'toolx', 'pouch', 'rolex', 'actAs']
+    for (const name of entries) {
+      const wrapper = `./src/${name}.esm.js`
+      if (fs.existsSync(wrapper)) {
+        fs.copyFileSync(wrapper, `./dist/${name}.mjs`)
+        console.log(`ESM wrapper copied: dist/${name}.mjs`)
+      }
+    }
   }
 })

@@ -15,11 +15,9 @@
  * - I-5: 缓存命中：第二次校验跳过 registry 查找
  */
 
-// 用 ESM import 走 vitest extensionAlias（.js → .ts），比 const+require 兼容 vitest ESM 模式。
-// ActionCommand / DiscoverCommand 等仍用 require 是因为它们引的是 CJS .js 源（RoleLifecycle 等）；
-// actAs 引的是 TS 源，必须用 import。
-import { getGlobalResourceManager } from './resource/index.js'
-
+// KNUTH-FEAT 2026-07-11: 改回 const+require 模式 — 跟 core 其余 TS 文件一致。
+// 原 ESM import 触发 tsup dts TS6307（actAs entry 不在 resource 文件列表）。
+// vitest extensionAlias 也会处理 require() 的 .js → .ts 解析。
 interface ResourceManagerLike {
   initialized: boolean
   initializeWithNewArchitecture(): Promise<void>
@@ -37,6 +35,11 @@ interface RegistryResource {
   reference: string
   source?: string
   [k: string]: unknown
+}
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { getGlobalResourceManager } = require('./resource/index.js') as {
+  getGlobalResourceManager: () => ResourceManagerLike
 }
 
 /** actAs 调用选项 */

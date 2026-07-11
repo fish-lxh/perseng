@@ -17,13 +17,21 @@
       "require": "./dist/resource.js",
       "import": "./dist/resource.mjs"
     },
-    "./mcp": {
-      "require": "./dist/mcp.js",
-      "import": "./dist/mcp.mjs"
-    },
     "./toolx": {
       "require": "./dist/toolx.js",
       "import": "./dist/toolx.mjs"
+    },
+    "./pouch": {
+      "require": "./dist/pouch.js",
+      "import": "./dist/pouch.mjs"
+    },
+    "./rolex": {
+      "require": "./dist/rolex.js",
+      "import": "./dist/rolex.mjs"
+    },
+    "./actAs": {
+      "require": "./dist/actAs.js",
+      "import": "./dist/actAs.mjs"
     }
   },
   "scripts": {
