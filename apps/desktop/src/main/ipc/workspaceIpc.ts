@@ -6,10 +6,13 @@
  * native folder-picker dialog. `system:checkGit` is a Windows-only probe for
  * git presence that historically lived in the same method; it stays here to
  * keep the registration order intact. Channel names preserved.
+ *
+ * KNUTH-FEAT 2026-07-11 G2.1: WorkspaceService 已抽到 @promptx/mcp-workspace-host
+ * (纯 Node.js 业务), 本文件只留 IPC 桥接 + system:checkGit 这种 Electron-only handler。
  */
 
 import { ipcMain, dialog } from 'electron'
-import { workspaceService } from '~/main/services/WorkspaceService'
+import { workspaceService } from '@promptx/mcp-workspace-host'
 
 export function registerWorkspaceIpc(): void {
   ipcMain.handle('workspace:getFolders', async () => workspaceService.getFolders())

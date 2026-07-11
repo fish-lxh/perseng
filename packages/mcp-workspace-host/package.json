@@ -1,0 +1,31 @@
+{
+  "name": "@promptx/mcp-workspace-host",
+  "version": "2.4.1",
+  "description": "Workspace folder/file CRUD service with path-sandbox enforcement. Pure Node.js host-side helper for Electron desktop (and any other Node.js host).",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
