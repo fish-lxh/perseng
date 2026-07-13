@@ -1,5 +1,5 @@
 import { BrowserWindow, IpcMainInvokeEvent, ipcMain, dialog } from 'electron'
-import { ResourceService } from '~/main/application/ResourceService'
+import { ResourceService } from '@promptx/resource-service'
 import * as path from 'path'
 import { t } from '~/main/i18n'
 import {

@@ -1,0 +1,37 @@
+{
+  "name": "@promptx/resource-service",
+  "version": "2.4.1",
+  "description": "Resource domain + service + repository for Perseng desktop. Wraps @promptx/core/pouch DiscoverCommand into a typed Resource interface.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@promptx/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@promptx/core": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
