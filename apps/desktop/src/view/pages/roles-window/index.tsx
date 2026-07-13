@@ -18,19 +18,27 @@ export default function RolesPage() {
 
   const filteredRoles = useMemo(() => {
     const q = query.trim().toLowerCase()
+    // KNUTH-FIX 2026-07-13: source 优先于 version
+    // - sourceFilter === "all" 时: 应用 versionFilter (V1/V2 双套规范互斥切换)
+    // - sourceFilter !== "all" 时: 忽略 versionFilter (用户选具体 source 就要看该 source 全集)
+    //   关键修复: 系统内置角色全是 V1 (packages/resource/resources/role/nuwa|luban|dayu|jiangziya|sean|verifier),
+    //   默认 versionFilter="v2" 时切 source="system" 也只会显示空, 必须让 source filter 在明确指定
+    //   时压制 version filter 才会显示系统角色
     return roles.filter((item) => {
       const isV2 = item.version === "v2"
+      const src = item.source ?? "user"
+      const sourceOk =
+        sourceFilter === "all" ||
+        src === (sourceFilter === "plaza" ? "project" : sourceFilter)
       const versionOk =
+        sourceFilter !== "all" ||
         (versionFilter === "v1" && !isV2) ||
         (versionFilter === "v2" && isV2)
-      const src = item.source ?? "user"
-      const sourceOk = sourceFilter === "all" ||
-        src === (sourceFilter === "plaza" ? "project" : sourceFilter)
       const queryOk =
         q === "" ||
         item.name.toLowerCase().includes(q) ||
         (item.description?.toLowerCase().includes(q) ?? false)
-      return versionOk && sourceOk && queryOk
+      return sourceOk && versionOk && queryOk
     })
   }, [roles, versionFilter, sourceFilter, query])
 
@@ -43,17 +51,17 @@ export default function RolesPage() {
     return { v1, v2 }
   }, [roles])
 
+  // KNUTH-FIX 2026-07-13: sourceStats 是"按这个 source 按钮会看到几个" 的语义
+    // 不能被当前 versionFilter 干扰 — 否则切到 source="system" 时按钮显示 (0) 让用户以为没角色
   const sourceStats = useMemo(() => {
     const stats = { system: 0, plaza: 0, user: 0 }
     roles.forEach((r) => {
-      const isV2 = r.version === "v2"
-      if ((versionFilter === "v1" && isV2) || (versionFilter === "v2" && !isV2)) return
       const src = r.source ?? "user"
       if (src === "project") stats.plaza++
       else if (src in stats) stats[src as keyof typeof stats]++
     })
     return stats
-  }, [roles, versionFilter])
+  }, [roles])
 
   const loadRoles = async (v2Enabled?: boolean) => {
     const useV2 = v2Enabled !== undefined ? v2Enabled : enableV2
