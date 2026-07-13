@@ -15,7 +15,7 @@
     "changeset:add": "changeset add",
     "changeset:status": "changeset status",
     "prepare": "npx lefthook install",
-    "postinstall": "electron-rebuild --only better-sqlite3 --force || true"
+    "postinstall": "node scripts/ensure-better-sqlite3.cjs"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",
