@@ -77,12 +77,16 @@ async function main() {
   // (带 packing 状态前缀)。我们匹配 EXACT 后缀
   // `\node_modules\@promptx\package.json`, 不能用 endsWith, 否则会误中
   // `assets\stub-node_modules\@promptx\package.json` (prebuild 模板)。
+  // KNUTH-FIX 2026-07-13: 更严格 — 要求 listing entry 在去除 'pack   : '
+  // 前缀后 EXACT 等于 stubTarget, 而不是 endsWith。
   const listing = asar.listPackage(asarPath, { isPack: true })
   const stubBack = STUB_REL_PATH_IN_ASAR.replace(/\//g, '\\')
   const stubTarget = '\\' + stubBack
-  const stubPresent = listing.some(
-    (p) => p === stubTarget || p.endsWith(' ' + stubTarget) || p.endsWith(':' + stubTarget)
-  )
+  const stubPresent = listing.some((p) => {
+    // 去掉 packing 状态前缀 "pack   : " 或 "unpack : ", 然后比对精确 path
+    const stripped = p.replace(/^(pack|unpack)\s*:\s*/, '').trim()
+    return stripped === stubTarget
+  })
   if (stubPresent) {
     console.log('[inject-stub] stub already present in asar at', stubTarget, ', skipping.')
     return
@@ -100,9 +104,44 @@ async function main() {
   console.log(`[inject-stub] wrote stub: ${STUB_REL_PATH_IN_ASAR}`)
 
   // 4) createPackage 覆盖原 asar
-  //    @electron/asar v3.4+ createPackage 返回 Promise<void>
-  console.log('[inject-stub] repacking asar ...')
-  await asar.createPackage(tmpDir, asarPath)
+  //    KNUTH-FIX 2026-07-13: 不用 asar.createPackage(tmpDir, asarPath) —
+  //    它内部用 `glob.sync(tmpDir + '/**/*', { dot: true })` crawl,
+  //    在 Windows + absolute path + extractAll 后创建的新文件组合下
+  //    漏掉 stub (`@promptx/package.json`)。症状: repacking 静默丢 stub,
+  //    verify extractFile 报 "was not found in this archive"。
+  //    绕开: 自己用 fs.readdirSync 递归收集 filenames + metadata,
+  //    直接调 asar.createPackageFromFiles(tmpDir, asarPath, filenames, metadata)
+  //    (asar.js line 83) — 它走 fs.createReadStream, 不经过 glob, 不漏。
+  //    ⚠️ KNUTH-FIX 2026-07-13b: filenames 必须是 ABSOLUTE 路径!
+  //    asar.js line 163 `wrapped_fs.createReadStream(filename)` 直接
+  //    把 filename 喂给 fs.createReadStream — relative filename 会被
+  //    解析为相对 process.cwd(), 报 ENOENT。asar.createPackageWithOptions
+  //    走 glob 返回的是 absolute path 所以 work; 我们 manual walk
+  //    默认给 relative path 就 broken。
+  console.log('[inject-stub] repacking asar (manual createPackageFromFiles) ...')
+  const filenames = []
+  const metadata = {}
+  function walk(dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, e.name)
+      const rel = path.relative(tmpDir, abs)
+      if (e.isSymbolicLink()) {
+        const st = fs.lstatSync(abs)
+        metadata[rel] = { type: 'link', stat: st }
+      } else if (e.isDirectory()) {
+        const st = fs.statSync(abs)
+        metadata[rel] = { type: 'directory', stat: st }
+        walk(abs)
+      } else if (e.isFile()) {
+        const st = fs.statSync(abs)
+        metadata[rel] = { type: 'file', stat: st }
+        filenames.push(abs)  // KNUTH-FIX 2026-07-13b: absolute path, NOT relative
+      }
+    }
+  }
+  walk(tmpDir)
+  console.log(`[inject-stub] crawled ${filenames.length} files (incl. stub)`)
+  await asar.createPackageFromFiles(tmpDir, asarPath, filenames, metadata, {})
 
   // 5) 清理
   fs.rmSync(tmpDir, { recursive: true, force: true })
@@ -119,33 +158,96 @@ async function main() {
   //  - 失败时一并打: asar stat (size + mtime) + 最后一次错误码 +
   //    期望 STUB_CONTENT 全文 + 实际内容前 500 字节; 把 "not extracted" /
   //    "wrong content" / "asar unreadable" 三种失败模态分开。
-  const BACKOFFS_MS = [100, 200, 400, 800, 1500]
+  // KNUTH-FIX 2026-07-13: extractFile 在 Windows 上必须用 NATIVE BACKSLASH
+  // path ('node_modules\\@promptx\\package.json'), 不能用 forward slash
+  // ('node_modules/@promptx/package.json') — 内部 listing 都是 backslash,
+  // forward slash 查不到 (实测三个变体: fwd FAIL / back FAIL(双反斜杠) / native OK)。
+  //
+  // KNUTH-FIX 2026-07-13c: 验证必须在新 node 子进程里跑! @electron/asar 在
+  // disk.js line 152 维护 module-level filesystemCache (Object.create(null))
+  // — 第一次 readFilesystemSync(asarPath) 把 header parse 进来缓存住。
+  // 我们 line 82 的 stub-present detection 调 listPackage 已经把 "无 stub"
+  // 的旧 header 缓存好; 之后 createPackageFromFiles 在同一进程里把
+  // asar 文件改写了, 但 disk.readFilesystemSync() 命中 module-level cache
+  // 返回旧 header, 验证就 false "not found"。asar 没有 export uncache API。
+  // 子进程独立 module state → 第一次 readFilesystemSync 强制重读 disk,
+  // 拿到真正写入的、新含 stub 的 header。
+  // KNUTH-FIX 2026-07-13c: @electron/asar 在 disk.js line 152 维护 module-level
+  // filesystemCache (Object.create(null)). 我们 line 82 的 stub-present detection
+  // 调 listPackage 已经把旧 header 缓存进去. 之后 createPackageFromFiles 在
+  // 同一进程里把 asar 文件改写了, 但 disk.readFilesystemSync() 命中 module-level
+  // cache 返回旧 header, 验证就 false "not found". asar 没有 export uncache API,
+  // delete require.cache('@electron/asar') 不够 — 真正的 cache 在 disk.js 子模块里
+  // 没被同时清掉, 重 require 后还是会拿到同一个 disk.js 实例.
+  //
+  // 最干净修法: 验证丢到子进程跑. node 子进程独立 module state → 第一次
+  // readFilesystemSync 必从 disk 重读, 拿到真正写入的新 header.
+  //
+  // KNUTH-FIX 2026-07-13d: 不要用 `node -e <inline-script>` 写 verifier —
+  // STUB_PATH_FOR_EXTRACT 含 Windows backslash, 嵌进 inline JS 字面量要
+  // 多层 escape (shell + node CLI + JS parser), 反斜杠被吞出 "[eval]:1
+  // SyntaxError". 改用 fs.writeFileSync 写一个临时 .cjs 文件, 让 node
+  // 直接跑它 — 文件里 path 用 path.join(...) 在 JS 运行时构造,
+  // 没有任何手写 backslash, 调试也能 cat.
+  const { execFileSync } = require('node:child_process')
+  const verifierDir = fs.mkdtempSync(path.join(os.tmpdir(), 'perseng-asar-verify-'))
+  const verifierPath = path.join(verifierDir, 'verify.cjs')
+  const verifierBody =
+    "'use strict'\n" +
+    "process.chdir(" + JSON.stringify(cwd) + ")\n" +
+    "const fs = require('node:fs')\n" +
+    "const path = require('node:path')\n" +
+    "const asar = require(" + JSON.stringify(require.resolve('@electron/asar')) + ")\n" +
+    "const ASAR_PATH = " + JSON.stringify(asarPath) + "\n" +
+    // 子进程自己构造 stub path, 用 path.sep (Windows = '\\'), 不要反斜杠字面量
+    "const STUB_PATH = path.join('node_modules', '@promptx', 'package.json')\n" +
+    "try {\n" +
+    "  const fd = fs.openSync(ASAR_PATH, 'r')\n" +
+    "  try { fs.fstatSync(fd) } finally { fs.closeSync(fd) }\n" +
+    "  const buf = asar.extractFile(ASAR_PATH, STUB_PATH)\n" +
+    "  process.stdout.write('__VERIFY_OK__' + buf.toString('utf-8'))\n" +
+    "} catch (e) {\n" +
+    "  process.stderr.write('verify-err: ' + (e && e.message ? e.message : String(e)) + '\\n')\n" +
+    "  process.stdout.write('__VERIFY_ERR__' + (e && e.message ? e.message : String(e)))\n" +
+    "  process.exit(2)\n" +
+    "}\n"
   let actualContent = null
   let lastErr = null
-  for (let i = 0; i < BACKOFFS_MS.length; i++) {
-    try {
-      if (i === 0) {
-        // cache-busting: 强制 OS 重新从磁盘读文件, 而不是用 FS cache / mmap
-        const fd = fs.openSync(asarPath, 'r')
-        try { fs.fstatSync(fd) } finally { fs.closeSync(fd) }
-      }
-      const buf = asar.extractFile(asarPath, STUB_REL_PATH_IN_ASAR)
-      actualContent = buf.toString('utf-8')
+  try {
+    fs.writeFileSync(verifierPath, verifierBody, 'utf-8')
+    const out = execFileSync(process.execPath, [verifierPath], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 30_000,
+    })
+    if (typeof out === 'string' && out.startsWith('__VERIFY_OK__')) {
+      actualContent = out.slice('__VERIFY_OK__'.length)
       lastErr = null
-      break
-    } catch (err) {
-      lastErr = err
-      if (i < BACKOFFS_MS.length - 1) {
-        await new Promise((r) => setTimeout(r, BACKOFFS_MS[i]))
-      }
+    } else if (typeof out === 'string' && out.startsWith('__VERIFY_ERR__')) {
+      lastErr = new Error(out.slice('__VERIFY_ERR__'.length))
+    } else {
+      lastErr = new Error('unexpected verifier stdout: ' + JSON.stringify(out).slice(0, 200))
     }
+  } catch (err) {
+    // execFileSync 在 child exit 2 时会把 stdout/stderr 放进 err.{stdout,stderr}
+    if (err && err.stdout) {
+      const s = String(err.stdout)
+      if (s.startsWith('__VERIFY_OK__')) actualContent = s.slice('__VERIFY_OK__'.length)
+      else if (s.startsWith('__VERIFY_ERR__')) lastErr = new Error(s.slice('__VERIFY_ERR__'.length))
+    }
+    if (lastErr === null && err && err.stderr) {
+      lastErr = new Error('child process died: ' + String(err.stderr).trim())
+    }
+    if (lastErr === null) lastErr = err instanceof Error ? err : new Error(String(err))
+  } finally {
+    try { fs.rmSync(verifierDir, { recursive: true, force: true }) } catch {}
   }
   const verified = actualContent !== null && actualContent === STUB_CONTENT
 
   if (verified) {
     console.log(`[inject-stub] OK: stub verified (${STUB_CONTENT.length} bytes match)`)
   } else {
-    console.error(`[inject-stub] FAIL: stub verification failed after ${BACKOFFS_MS.length} attempts`)
+    console.error(`[inject-stub] FAIL: stub verification failed`)
     try {
       const st = fs.statSync(asarPath)
       console.error(`[inject-stub]   asar stat: size=${st.size}  mtime=${st.mtime.toISOString()}`)
