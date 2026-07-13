@@ -26,15 +26,18 @@ import type {
 
 // KNUTH-FEAT 2026-07-11 G2.2: tsup.config shims=true 让 import.meta.url 在 CJS bundle
 // 里指向真实的 file URL; createRequire 才能解析 @promptx/core/pouch 这样的 cross-workspace 包。
+// KNUTH-FIX 2026-07-13: DiscoverCommand 在 pouchMod.commands 命名空间下, 不在 pouchMod 顶层。
+// 直接 `_require('@promptx/core/pouch').DiscoverCommand` 永远 undefined,
+// 导致 desktop 端 IPC `resources:getGrouped` 抛 ERR 吞了返回 [] → 角色列表一直空。
+// 触发版本: @promptx/core 2.4.1 dist/pouch.js 形态已验 (commands 是 nested CommonJS namespace)
 const _require = createRequire(import.meta.url)
-const { DiscoverCommand } = _require('@promptx/core/pouch') as {
-  DiscoverCommand: new () => {
-    refreshAllResources(): Promise<void>
-    loadRoleRegistry(): Promise<CategorizedRegistry>
-    loadToolRegistry(): Promise<CategorizedRegistry>
-    categorizeBySource(registry: CategorizedRegistry): CategorizedRegistry
-  }
-}
+const _pouch = _require('@promptx/core/pouch')
+const DiscoverCommand: new () => {
+  refreshAllResources(): Promise<void>
+  loadRoleRegistry(): Promise<CategorizedRegistry>
+  loadToolRegistry(): Promise<CategorizedRegistry>
+  categorizeBySource(registry: CategorizedRegistry): CategorizedRegistry
+} = _pouch.commands.DiscoverCommand
 
 interface CategorizedRegistry {
   system?: unknown[]
