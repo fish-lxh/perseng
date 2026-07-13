@@ -4,8 +4,7 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts',
     'mcp-server': 'src/bin/mcp-server.ts',  // 平铺到 dist/mcp-server.js
-    'worker': 'src/workers/worker.ts',  // 平铺到 dist/worker.js
-    'timeline/index': 'src/timeline/index.ts'  // 平铺到 dist/timeline/index.js
+    'worker': 'src/workers/worker.ts'  // 平铺到 dist/worker.js
   },
   format: ['esm'],
   dts: false, // 暂时禁用，有类型错误需要修复

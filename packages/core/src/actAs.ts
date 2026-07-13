@@ -37,9 +37,29 @@ interface RegistryResource {
   [k: string]: unknown
 }
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { getGlobalResourceManager } = require('./resource/index.js') as {
-  getGlobalResourceManager: () => ResourceManagerLike
+// KNUTH-FIX 2026-07-13: vitest 4.x ESM 模式下, top-level `require('./resource/index.js')`
+// 不经过 extensionAlias .js→.ts 解析, 直接抛 "Cannot find module"; 而
+// `await import()` 走 vite-node 全链路正常解析 + vi.mock factory 拦截。
+// tsup 把这个 await import 编到 dist/actAs.js 时保持动态 import 形式
+// (CJS ESM 互操作正常, dist 仍是 CJS 兼容)。
+// 延迟到 actAs() 内部: result 通过 session 缓存, 资源管理器引用延迟到首次调用,
+// await 只发生一次。
+let _getGlobalResourceManager: (() => ResourceManagerLike) | null = null
+async function loadResourceManager(): Promise<() => ResourceManagerLike> {
+  if (_getGlobalResourceManager) return _getGlobalResourceManager
+  // 双层 unknown cast 避开两个 TS 错:
+  //   1) TS2352 (类型不充分重叠): outer ResourceManagerLike 比 resource/index.ts 内部
+  //      interface (loose [k]: unknown) 字段更严, 必须过 unknown
+  //   2) TS6307 (actAs entry 不在 resource 文件列表): await import 触发静态类型解析
+  //      需要先 unknown 强制避检。
+  // @ts-ignore — TS6307 actAs entry 不在 resource 文件列表, 静态类型解析跟随 dynamic import
+  //               失败; await import 在运行时正常 (dist/actAs.js 仍 CJS 兼容)。
+  //               KNUTH-FIX 2026-07-13: vitest 4.x extensionAlias 不覆盖 require 路径解析,
+  //               改 await import 才会经 vite-node 解析 + vi.mock factory 拦截。
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mod = ((await import('./resource/index.js')) as unknown) as any
+  _getGlobalResourceManager = mod.getGlobalResourceManager as () => ResourceManagerLike
+  return _getGlobalResourceManager
 }
 
 /** actAs 调用选项 */
@@ -131,7 +151,7 @@ export async function actAs(id: string, opts: ActAsOptions = {}): Promise<ActAsR
     if (cached) return cached
   }
 
-  const rm = getGlobalResourceManager() as ResourceManagerLike
+  const rm = (await loadResourceManager())() as ResourceManagerLike
   if (!rm.initialized) {
     await rm.initializeWithNewArchitecture()
   }
@@ -273,9 +293,17 @@ async function emitRoleActivated(
   }
 }
 
-/** 同步版：仅校验 id 是否在册，不返回内容。用于 hot path 校验（如 CLI quick check）。 */
+/** 同步版：仅校验 id 是否在册，不返回内容。用于 hot path 校验（如 CLI quick check）。
+ *  依赖 loadResourceManager() 的副作用 — 模块加载时启动加载, 调用时若未完成则保守返回 false。
+ *  KNUTH-FIX 2026-07-13: actAs 改 await import 后, getGlobalResourceManager 不再同步可得。
+ *  isRegistered 选择"加载未完成 = 未注册"的保守语义, 不抛错。*/
 export function isRegistered(id: string, protocol?: string): boolean {
-  const rm = getGlobalResourceManager() as ResourceManagerLike
+  if (!_getGlobalResourceManager) {
+    // 显式启动后台加载 (用于下次 actAs() 时无需再次 await)。
+    void loadResourceManager()
+    return false
+  }
+  const rm = _getGlobalResourceManager() as ResourceManagerLike
   if (!rm.initialized || !rm.registryData) return false
   if (protocol) {
     return findResource(rm, id, protocol) !== null

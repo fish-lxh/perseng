@@ -141,9 +141,9 @@ export function parseRef(raw: string): {
   const m = raw.match(RESOURCE_REF_REGEX)
   if (!m) return null
 
-  const prefix = m[1]
-  const protocol = m[2]
-  const tail = m[3]
+  const prefix = m[1]!
+  const protocol = m[2]!
+  const tail = m[3]!
   // 去掉 :// 或 :
   const pathAndParams = tail.startsWith('//') ? tail.substring(2) : tail
   // 去掉 query params

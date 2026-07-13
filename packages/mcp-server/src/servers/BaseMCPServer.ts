@@ -352,6 +352,12 @@ export abstract class BaseMCPServer implements MCPServer {
 
     const startTime = Date.now();
 
+    // KNUTH-FIX 2026-07-13: 增 +1 activeRequests (+ requestCount + try/finally 减 1)。
+    // 测试要求 executeTool() 期间 getActiveRequests() > 0 + 调用后 requestCount 增 1。
+    // 之前 executeTool 只算 startTime, 不调用任何 metric 跟踪函数, 计数全停在 0。
+    this.activeRequests += 1
+    this.metrics.requestCount += 1
+
     this.logger.info(`[TOOL_EXEC_START] Tool: ${name}`);
     // KNUTH-FIX 2026-07-06: pino.Logger 不支持 (string, obj) overload
     logDebug(`[TOOL_ARGS] ${name}:`, args);
@@ -380,12 +386,17 @@ export abstract class BaseMCPServer implements MCPServer {
       // string | object — 走 record cast。
       logDebug(`[TOOL_RESULT] ${name}:`, result as Record<string, unknown>);
 
+      // KNUTH-FIX 2026-07-13: 增量平均响应时间 (rolling avg)。原本 updateAvgResponseTime 方法无人调用。
+      this.updateAvgResponseTime(responseTime)
+
       return result;
     } catch (error: any) {
-      // 直接失败，不重试，不计数，简单明了
+      this.metrics.errorCount += 1
       // KNUTH-FIX 2026-07-06: pino overload (string, obj) 不匹配
       logError(`[TOOL_EXEC_ERROR] Tool: ${name}`, error);
       throw error;
+    } finally {
+      this.activeRequests -= 1
     }
   }
   

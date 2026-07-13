@@ -12,7 +12,6 @@
  */
 
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 
 import type { Ref, RegistryEntry, RegistryJson, ResolveResult } from './types.js'
 
