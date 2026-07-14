@@ -1,7 +1,7 @@
 // Import polyfills first, before any other modules
 import '~/main/polyfills'
 
-import { app, dialog } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { TrayPresenter } from '~/main/tray/TrayPresenter'
 import { PersengServerAdapter } from '~/main/infrastructure/adapters/PersengServerAdapter'
 import { FileConfigAdapter } from '~/main/infrastructure/adapters/FileConfigAdapter'
@@ -14,6 +14,9 @@ import { ElectronAutoStartAdapter } from '~/main/infrastructure/adapters/Electro
 import { AutoStartWindow } from '~/main/windows/AutoStartWindow'
 import { CognitionWindow } from '~/main/windows/CognitionWindow'
 import { agentXService } from '~/main/services/AgentXService'
+import { webAccessService } from '~/main/services/WebAccessService'
+import { FeishuManager } from '@promptx/feishu-desktop'
+import { workspaceService } from '@promptx/mcp-workspace-host'
 import * as logger from '@promptx/logger'
 import * as path from 'node:path'
 import * as fs from 'node:fs'
@@ -26,13 +29,19 @@ import { registerDatabaseManagerIpc } from '~/main/ipc/databaseManagerIpc'
 import { registerDialogIpc } from '~/main/ipc/dialogIpc'
 import { registerShellIpc } from '~/main/ipc/shellIpc'
 import { registerWindowIpc } from '~/main/ipc/windowIpc'
-import { registerAgentXIpc } from '~/main/ipc/agentxIpc'
-import { registerFeishuIpc } from '~/main/ipc/feishuIpc'
-import { registerWebAccessIpc } from '~/main/ipc/webAccessIpc'
-import { registerWorkspaceIpc } from '~/main/ipc/workspaceIpc'
-import { registerUpdateIpc } from '~/main/ipc/updateIpc'
-import { setupAppEvents, type AppLifecycleDeps } from '~/main/lifecycle/AppLifecycle'
-import { restoreProjectForDesktop } from '~/main/lifecycle/ProjectBinding'
+
+function formatStartServerResultError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message || error.name || 'Unknown server start error'
+  }
+  if (typeof error === 'object' && error !== null) {
+    const maybeCode = 'code' in error ? String((error as { code?: unknown }).code ?? '') : ''
+    const maybeMessage =
+      'message' in error ? String((error as { message?: unknown }).message ?? '') : ''
+    return [maybeCode, maybeMessage].filter(Boolean).join(': ') || String(error)
+  }
+  return String(error)
+}
 
 class PersengDesktopApp {
   private trayPresenter: TrayPresenter | null = null
@@ -42,6 +51,7 @@ class PersengDesktopApp {
   private updateManager: UpdateManager | null = null
   private autoStartService: AutoStartService | null = null
   private autoStartWindow: AutoStartWindow | null = null
+  private feishuManager: FeishuManager | null = null
 
   async initialize(): Promise<void> {
     // Capture console output to log file (covers @agentxjs/common runtime logs)
@@ -71,10 +81,6 @@ class PersengDesktopApp {
     await app.whenReady()
     logger.info('Electron app ready')
 
-    // §14.1: Desktop 启动时若 cwd 命中已注册项目, 自动恢复 project 状态
-    // (失败/无 instance 时静默返回, 不影响主进程启动链路)
-    await restoreProjectForDesktop()
-
     // Hide dock icon on macOS
     if (process.platform === 'darwin' && app.dock) {
       app.dock.hide()
@@ -100,10 +106,10 @@ class PersengDesktopApp {
     registerDialogIpc()
     registerShellIpc()
     registerWindowIpc()
-    registerAgentXIpc()
-    registerWebAccessIpc()
-    registerFeishuIpc()
-    registerWorkspaceIpc()
+    this.setupAgentXIPC()
+    this.setupWebAccessIPC()
+    this.setupFeishuIPC()
+    this.setupWorkspaceIPC()
     registerTimelineIpc()
     registerDatabaseManagerIpc()
 
@@ -121,7 +127,7 @@ class PersengDesktopApp {
     logger.info('Update manager initialized')
 
     // Setup update IPC handlers
-    registerUpdateIpc({ getUpdateManager: () => this.updateManager })
+    this.setupUpdateIPC()
 
     // Setup presentation layer
     logger.info('Setting up presentation layer...')
@@ -139,11 +145,17 @@ class PersengDesktopApp {
     // Auto-start server on app launch
     logger.info('Auto-starting Perseng server...')
     try {
-      await startUseCase.execute()
-      logger.info('Perseng server started automatically')
+      const result = await startUseCase.execute()
+      if (result.ok) {
+        logger.info('Perseng server started automatically')
+      } else {
+        logger.error(
+          'Failed to auto-start server:',
+          formatStartServerResultError(result.error),
+        )
+      }
     } catch (error) {
-      const err = String(error);
-      logger.error('Failed to auto-start server:', err)
+      logger.error('Failed to auto-start server:', formatStartServerResultError(error))
     }
 
     // Auto-start AgentX service
@@ -152,8 +164,13 @@ class PersengDesktopApp {
       await agentXService.start()
       logger.info('AgentX service started automatically')
     } catch (error) {
-      const err = String(error);
-      logger.error('Failed to auto-start AgentX service:', err)
+      const details =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'object' && error !== null && 'message' in error
+            ? String((error as { message?: unknown }).message ?? error)
+            : String(error)
+      logger.error('Failed to auto-start AgentX service:', details)
     }
 
     // Register global callback for second-instance to open main window
@@ -319,6 +336,275 @@ class PersengDesktopApp {
     }
   }
 
+  private setupAgentXIPC(): void {
+    // 获取 AgentX 服务器 URL
+    ipcMain.handle('agentx:getServerUrl', () => {
+      return agentXService.getServerUrl()
+    })
+
+    // 获取 AgentX 服务状态
+    ipcMain.handle('agentx:getStatus', () => {
+      return agentXService.getStatus()
+    })
+
+    // 启动 AgentX 服务
+    ipcMain.handle('agentx:start', async () => {
+      try {
+        await agentXService.start()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    })
+
+    // 停止 AgentX 服务
+    ipcMain.handle('agentx:stop', async () => {
+      try {
+        await agentXService.stop()
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    })
+
+    // 获取 AgentX 配置
+    ipcMain.handle('agentx:getConfig', () => {
+      return agentXService.getConfig()
+    })
+
+    // 更新 AgentX 配置
+    ipcMain.handle('agentx:updateConfig', async (_event, config) => {
+      try {
+        await agentXService.updateConfig(config)
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    })
+
+    // 测试 AgentX 连接
+    ipcMain.handle('agentx:testConnection', async (_event, config) => {
+      return await agentXService.testConnection(config)
+    })
+
+    // 获取 MCP 服务器配置
+    ipcMain.handle('agentx:getMcpServers', () => {
+      return agentXService.getMcpServers()
+    })
+
+    // 更新 MCP 服务器配置
+    ipcMain.handle('agentx:updateMcpServers', async (_event, mcpServers) => {
+      try {
+        await agentXService.updateMcpServers(mcpServers)
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    })
+
+    // 获取可用 Skills 列表
+    ipcMain.handle('agentx:getAvailableSkills', async () => {
+      return await agentXService.getAvailableSkills()
+    })
+
+    // 获取已启用的 Skills
+    ipcMain.handle('agentx:getEnabledSkills', () => {
+      return agentXService.getEnabledSkills()
+    })
+
+    // 更新已启用的 Skills
+    ipcMain.handle('agentx:updateEnabledSkills', async (_event, skills: string[]) => {
+      try {
+        await agentXService.updateEnabledSkills(skills)
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    })
+
+    // 导入 Skill（zip 压缩包）
+    ipcMain.handle('agentx:importSkill', async (_event, zipPath: string) => {
+      return await agentXService.importSkill(zipPath)
+    })
+
+    // 删除 Skill
+    ipcMain.handle('agentx:deleteSkill', async (_event, skillName: string) => {
+      return await agentXService.deleteSkill(skillName)
+    })
+  }
+
+  private setupFeishuIPC(): void {
+    const dataDir = app.getPath('userData')
+    this.feishuManager = new FeishuManager(dataDir, agentXService.getPort())
+
+    ipcMain.handle('feishu:getConfig', async () => {
+      const saved = this.feishuManager!.loadConfig()
+      if (saved?.feishu) {
+        return saved.feishu
+      }
+      return null
+    })
+
+    ipcMain.handle('feishu:saveConfig', async (_, config: any) => {
+      try {
+        this.feishuManager!.saveConfig(config, { name: 'Perseng' })
+        return { success: true }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    })
+
+    ipcMain.handle('feishu:start', async (_, feishuConfig: any, roleConfig?: any) => {
+      try {
+        const role = roleConfig || { name: 'Perseng' }
+        await this.feishuManager!.start(feishuConfig, role)
+        return { success: true }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    })
+
+    ipcMain.handle('feishu:stop', async () => {
+      try {
+        await this.feishuManager!.stop()
+        return { success: true }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    })
+
+    ipcMain.handle('feishu:status', async () => {
+      return this.feishuManager!.getStatus()
+    })
+
+    ipcMain.handle('feishu:remove', async () => {
+      try {
+        await this.feishuManager!.remove()
+        return { success: true }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    })
+
+    // 尝试恢复已保存的飞书连接
+    this.feishuManager.restore().catch(() => {})
+  }
+
+  private setupWebAccessIPC(): void {
+    ipcMain.handle('webAccess:getStatus', () => {
+      const last = webAccessService.getLastStatus()
+      return {
+        enabled: webAccessService.isEnabled(),
+        externalAccess: agentXService.getExternalAccess(),
+        ...(last ?? {}),
+      }
+    })
+
+    ipcMain.handle('webAccess:enable', async (_event, port?: number) => {
+      try {
+        if (port) webAccessService.setPort(port)
+        await agentXService.setExternalAccess(true)
+        const status = await webAccessService.enable(agentXService.getPort(), 'perseng-desktop')
+        return { success: true, ...status }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    })
+
+    ipcMain.handle('webAccess:disable', async () => {
+      try {
+        await webAccessService.disable()
+        await agentXService.setExternalAccess(false)
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    })
+  }
+
+  private setupWorkspaceIPC(): void {
+    ipcMain.handle('workspace:getFolders', async () => workspaceService.getFolders())
+
+    ipcMain.handle('workspace:addFolder', async (_, folderPath: string, name: string) =>
+      workspaceService.addFolder(folderPath, name))
+
+    ipcMain.handle('workspace:removeFolder', async (_, id: string) =>
+      workspaceService.removeFolder(id))
+
+    ipcMain.handle('workspace:pickFolder', async () => {
+      const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+      if (result.canceled || !result.filePaths[0]) return null
+      const folderPath = result.filePaths[0]
+      const name = folderPath.split(/[/\\]/).filter(Boolean).pop() || 'workspace'
+      return { path: folderPath, name }
+    })
+
+    ipcMain.handle('workspace:listDir', async (_, dirPath: string) =>
+      workspaceService.listDir(dirPath))
+
+    ipcMain.handle('workspace:readFile', async (_, filePath: string) =>
+      workspaceService.readFile(filePath))
+
+    ipcMain.handle('workspace:readFileBase64', async (_, filePath: string) =>
+      workspaceService.readFileBase64(filePath))
+
+    ipcMain.handle('workspace:writeFile', async (_, filePath: string, content: string) =>
+      workspaceService.writeFile(filePath, content))
+
+    ipcMain.handle('workspace:createDir', async (_, dirPath: string) =>
+      workspaceService.createDir(dirPath))
+
+    ipcMain.handle('workspace:deleteItem', async (_, itemPath: string) =>
+      workspaceService.deleteItem(itemPath))
+
+    ipcMain.handle('system:checkGit', async () => {
+      if (process.platform !== 'win32') return { installed: true }
+      try {
+        const { execSync } = await import('node:child_process')
+        try {
+          execSync('git --version', { encoding: 'utf-8', timeout: 3000 })
+          return { installed: true }
+        } catch {
+          // Try common Git installation paths on Windows
+          const commonPaths = [
+            'C:\\Program Files\\Git\\cmd\\git.exe',
+            'C:\\Program Files (x86)\\Git\\cmd\\git.exe',
+          ]
+          for (const gitPath of commonPaths) {
+            try {
+              execSync(`"${gitPath}" --version`, { encoding: 'utf-8', timeout: 3000 })
+              return { installed: true }
+            } catch {
+              // continue
+            }
+          }
+          return { installed: false }
+        }
+      } catch {
+        return { installed: false }
+      }
+    })
+  }
+
+  private setupUpdateIPC(): void {
+    // 检查更新
+    ipcMain.handle('check-for-updates', async () => {
+      if (!this.updateManager) {
+        throw new Error('Update manager not initialized')
+      }
+      await this.updateManager.checkForUpdatesManual()
+      return { success: true }
+    })
+
+    // 重启应用
+    ipcMain.handle('app:relaunch', () => {
+      app.relaunch()
+      // 先隐藏所有窗口，避免白屏闪烁
+      BrowserWindow.getAllWindows().forEach(w => w.hide())
+      app.exit(0)
+    })
+  }
+
   private setupInfrastructure(): void {
     // Create adapters
     this.serverPort = new PersengServerAdapter()
@@ -367,13 +653,69 @@ class PersengDesktopApp {
   }
 
   private setupAppEvents(): void {
-    // P0 step 2.3: 委托给 AppLifecycle 模块, 装配层只传 getter
-    const lifecycleDeps: AppLifecycleDeps = {
-      getServerPort: () => this.serverPort,
-      getTrayPresenter: () => this.trayPresenter,
-      getAutoStartWindow: () => this.autoStartWindow,
+    // NOTE: second-instance handler is set up in bootstrap.ts
+    // to ensure it's registered before app initialization completes
+
+    // Prevent app from quitting when all windows are closed
+    app.on('window-all-closed', () => {
+      // Keep app running in system tray on all platforms
+      // Do nothing - app stays in system tray
+      // User can quit from tray menu
+    })
+
+    // Handle app quit - use synchronous cleanup
+    let isQuitting = false
+    app.on('before-quit', (event) => {
+      if (!isQuitting) {
+        event.preventDefault()
+        isQuitting = true
+
+        // Perform cleanup
+        this.performCleanup().then(() => {
+          logger.info('Cleanup completed, exiting...')
+          app.exit(0)
+        }).catch((error) => {
+          logger.error('Error during cleanup:', error)
+          app.exit(0)
+        })
+      }
+    })
+
+    // Handle activation (macOS)
+    app.on('activate', () => {
+      // Show tray menu if needed
+    })
+  }
+
+  private async performCleanup(): Promise<void> {
+    try {
+      // Stop server if running
+      if (this.serverPort) {
+        const statusResult = await this.serverPort.getStatus()
+        if (statusResult.ok && statusResult.value === 'running') {
+          logger.info('Stopping server before quit...')
+          await this.serverPort.stop()
+        }
+      }
+    } catch (error) {
+      const err = String(error)
+      logger.error('Error stopping server:', err)
     }
-    setupAppEvents(lifecycleDeps)
+
+    // Cleanup UI components
+    this.cleanup()
+  }
+
+  private cleanup(): void {
+    if (this.trayPresenter) {
+      this.trayPresenter.destroy()
+      this.trayPresenter = null
+    }
+
+    if (this.autoStartWindow) {
+      this.autoStartWindow.cleanup()
+      this.autoStartWindow = null
+    }
   }
 }
 

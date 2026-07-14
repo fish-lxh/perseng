@@ -15,6 +15,38 @@ import AdmZip from 'adm-zip'
 // 见 plan: 方案 A - AgentXService 重写以捕获工具事件。
 import { createAgentXRuntime, type AgentXRuntime } from './agentx/createAgentXRuntime'
 
+// KNUTH-FIX 2026-07-13: 把 Error 对象的 message 优先提取出来, 避免
+// `String(error)` 在某些 logger/error 链路上输出空字符串 (logger 看到 Error 实例时
+// 只打 name + message, String(err) 在拼接场景下也会被吞 stack)。
+// 兜底 String(err).slice(0, 300) 防止非 Error 对象输出整张循环引用。
+function formatError(err: unknown): string {
+  if (err instanceof Error) return err.message || err.name || 'Unknown error'
+  return String(err).slice(0, 300)
+}
+
+// KNUTH-FIX 2026-07-13: AgentX 启动失败的细分原因 + actionable hint.
+// 之前 start() 失败链路只用 String(error) 透出到 UI, 用户看到 "服务状态已停止"
+// + "启动服务器"无反应, 不知道是缺 API Key 还是 runtime 挂了。
+// 现在每个失败原因带 code + 中文 hint, IPC 端透出 code 给 UI 决策如何展示。
+export type AgentXStartErrorCode =
+  | 'NO_API_KEY'
+  | 'NO_BASE_URL'
+  | 'NO_MODEL'
+  | 'RUNTIME_INIT_FAILED'
+  | 'LISTEN_FAILED'
+  | 'BINARY_NOT_FOUND'
+
+export class AgentXStartError extends Error {
+  readonly code: AgentXStartErrorCode
+  readonly hint?: string
+  constructor(code: AgentXStartErrorCode, message: string, hint?: string) {
+    super(message)
+    this.name = 'AgentXStartError'
+    this.code = code
+    this.hint = hint
+  }
+}
+
 export interface MCPServerConfig {
   name: string
   // stdio 类型
@@ -77,11 +109,14 @@ export class AgentXService {
   private imageCreateUnsubscribe: Unsubscribe | null = null
   private externalAccess: boolean = false
   private detachTimeline: (() => void) | null = null
+  private configLoaded: boolean = false
 
   constructor() {
     this.configPath = path.join(app.getPath('userData'), 'agentx-config.json')
     this.agentxDir = path.join(app.getPath('userData'), '.agentx')
-    this.loadConfig()
+    void app.whenReady().then(() => {
+      this.ensureConfigLoaded()
+    })
   }
 
   private loadConfig(): void {
@@ -112,8 +147,20 @@ export class AgentXService {
         this.syncActiveProfileToTopLevel()
       }
     } catch (error) {
-      logger.error('Failed to load AgentX config:', String(error))
+      // KNUTH-FIX 2026-07-13: 改用 formatError, 避免 String(error) 吞 message
+      logger.error('Failed to load AgentX config:', formatError(error))
     }
+  }
+
+  private ensureConfigLoaded(): void {
+    if (this.configLoaded) {
+      return
+    }
+    if (!app.isReady()) {
+      return
+    }
+    this.loadConfig()
+    this.configLoaded = true
   }
 
   /**
@@ -153,7 +200,7 @@ export class AgentXService {
       const persisted = this.serializeConfig(this.config)
       fs.writeFileSync(this.configPath, JSON.stringify(persisted, null, 2))
     } catch (error) {
-      logger.error('Failed to save AgentX config:', String(error))
+      logger.error('Failed to save AgentX config:', formatError(error))
     }
   }
 
@@ -225,16 +272,18 @@ export class AgentXService {
       }
       return decrypted
     } catch (error) {
-      logger.warn('Failed to decrypt AgentX secret:', String(error))
+      logger.warn('Failed to decrypt AgentX secret:', formatError(error))
       return ''
     }
   }
 
   getConfig(): AgentXConfig {
+    this.ensureConfigLoaded()
     return { ...this.config }
   }
 
   async updateConfig(newConfig: Partial<AgentXConfig>): Promise<void> {
+    this.ensureConfigLoaded()
     this.config = { ...this.config, ...newConfig }
 
     // Sync active profile's fields to top-level apiKey/baseUrl/model
@@ -271,6 +320,7 @@ export class AgentXService {
   }
 
   async testConnection(config: Partial<AgentXConfig>): Promise<{ success: boolean; error?: string }> {
+    this.ensureConfigLoaded()
     const testConfig = { ...this.config, ...config }
 
     if (!testConfig.apiKey) {
@@ -301,11 +351,12 @@ export class AgentXService {
       const errorMessage = (errorData as any)?.error?.message || `HTTP ${response.status}`
       return { success: false, error: errorMessage }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, error: formatError(error) }
     }
   }
 
   async start(): Promise<void> {
+    this.ensureConfigLoaded()
     LoggerFactoryImpl.configure({ defaultLevel: 'warn' })
 
     if (this.isRunning) {
@@ -313,11 +364,29 @@ export class AgentXService {
       return
     }
 
+    // KNUTH-FIX 2026-07-13: 把"启动前配置缺失"和"运行时初始化失败"区分开。
+    // 之前两类错误都走同一个 `logger.error('Failed to start AgentX service:', String(error))`
+    // 吞掉 message, UI 看不到原因. 现在每类失败带 `code` + 用户可执行的 hint.
     if (!this.config.apiKey) {
-      // KNUTH-FIX 2026-07-08: 之前静默 return,导致 IPC 端 agentx:start 返回
-      // { success: true }（虚假成功），用户看到的"未配置"提示无具体错误。
-      // 改为 throw,让 IPC 端把 error message 透传到 UI。
-      throw new Error('API Key not configured. Please set it in Settings → AgentX Profiles.')
+      throw new AgentXStartError(
+        'NO_API_KEY',
+        'API Key not configured.',
+        'Open Settings → AgentX Profiles and set an API Key for the active profile.'
+      )
+    }
+    if (!this.config.baseUrl) {
+      throw new AgentXStartError(
+        'NO_BASE_URL',
+        'Base URL is empty.',
+        'Open Settings → AgentX Profiles and set baseUrl.'
+      )
+    }
+    if (!this.config.model) {
+      throw new AgentXStartError(
+        'NO_MODEL',
+        'Model is empty.',
+        'Open Settings → AgentX Profiles and set model.'
+      )
     }
 
     try {
@@ -417,8 +486,19 @@ export class AgentXService {
 
       logger.info(`AgentX service started on ws://${this.externalAccess ? '0.0.0.0' : 'localhost'}:${this.port}`)
     } catch (error) {
-      logger.error('Failed to start AgentX service:', String(error))
-      throw error
+      // KNUTH-FIX 2026-07-13: 优先透出 message, 兜底再包装成 RUNTIME_INIT_FAILED.
+      // 不要再用 String(error) —— 已知会吞掉 message, 让用户 UI 只看到空白.
+      if (error instanceof AgentXStartError) {
+        logger.error(`[AgentX.start] ${error.code}: ${error.message}${error.hint ? ` (${error.hint})` : ''}`)
+        throw error
+      }
+      const msg = formatError(error)
+      logger.error(`[AgentX.start] RUNTIME_INIT_FAILED: ${msg}`)
+      throw new AgentXStartError(
+        'RUNTIME_INIT_FAILED',
+        `AgentX runtime initialization failed: ${msg}`,
+        'Check log for full stack. Common causes: missing claude-code CLI, port 5200 in use, or MCP binary path broken.'
+      )
     }
   }
 
@@ -472,7 +552,7 @@ export class AgentXService {
       this.isRunning = false
       logger.info('AgentX service stopped')
     } catch (error) {
-      logger.error('Failed to stop AgentX service:', String(error))
+      logger.error('Failed to stop AgentX service:', formatError(error))
       throw error
     }
   }
@@ -505,7 +585,7 @@ export class AgentXService {
 
       logger.info(`Created .claude/settings.json for image: ${imageId}`)
     } catch (error) {
-      logger.error(`Failed to setup .claude settings for image ${imageId}:`, String(error))
+      logger.error(`Failed to setup .claude settings for image ${imageId}:`, formatError(error))
     }
   }
 
@@ -542,7 +622,7 @@ export class AgentXService {
       }
       logger.info(`Linked skills into workdir: ${localSkillsLink} → ${skillsSourceDir}`)
     } catch (error) {
-      logger.warn(`Failed to link skills into workdir: ${String(error)}`)
+      logger.warn(`Failed to link skills into workdir: ${formatError(error)}`)
     }
   }
 
@@ -661,6 +741,7 @@ export class AgentXService {
    * 获取所有 MCP 服务器配置（包括内置的）
    */
   getMcpServers(): MCPServerConfig[] {
+    this.ensureConfigLoaded()
     const servers: MCPServerConfig[] = []
 
     // 添加内置的 Perseng MCP 服务器（从系统配置获取地址）
@@ -722,7 +803,7 @@ export class AgentXService {
         return `http://${host}:${port}/mcp`
       }
     } catch (error) {
-      logger.error('Failed to read Perseng server config:', String(error))
+      logger.error('Failed to read Perseng server config:', formatError(error))
     }
     // 默认地址
     return 'http://127.0.0.1:5203/mcp'
@@ -798,7 +879,7 @@ export class AgentXService {
 
       return skills
     } catch (error) {
-      logger.error('Failed to get available skills:', String(error))
+      logger.error('Failed to get available skills:', formatError(error))
       return []
     }
   }
@@ -807,6 +888,7 @@ export class AgentXService {
    * 获取已启用的 Skills 列表
    */
   getEnabledSkills(): string[] {
+    this.ensureConfigLoaded()
     return this.config.enabledSkills || []
   }
 
@@ -891,8 +973,8 @@ export class AgentXService {
         }
       }
     } catch (error) {
-      logger.error('Failed to import skill:', String(error))
-      return { success: false, error: String(error) }
+      logger.error('Failed to import skill:', formatError(error))
+      return { success: false, error: formatError(error) }
     }
   }
 
@@ -933,8 +1015,8 @@ export class AgentXService {
 
       return { success: true }
     } catch (error) {
-      logger.error('Failed to delete skill:', String(error))
-      return { success: false, error: String(error) }
+      logger.error('Failed to delete skill:', formatError(error))
+      return { success: false, error: formatError(error) }
     }
   }
 

@@ -107,12 +107,10 @@ interface ElectronAPI {
     // Skills API
     getAvailableSkills: () => Promise<{ name: string; description: string; version?: string }[]>
     getEnabledSkills: () => Promise<string[]>
-    // KNUTH-FEAT 2026-07-08: 监听 config 变更, 让 AgentX 窗口在 settings 改完 API Key
-    // 后自动重新检查 + 重连, 不必关重开窗口。
-    onConfigChange: (callback: (payload: { config: AgentXConfig }) => void) => () => void
     updateEnabledSkills: (skills: string[]) => Promise<{ success: boolean; error?: string }>
     importSkill: (zipPath: string) => Promise<{ success: boolean; skillName?: string; error?: string }>
     deleteSkill: (skillName: string) => Promise<{ success: boolean; error?: string }>
+    onConfigChange: (callback: (payload: { config: AgentXConfig }) => void) => () => void
   }
   // Web Access API
   webAccess: {
@@ -263,6 +261,8 @@ const allowedInvokeChannels = new Set([
   'server-config:get',
   'server-config:reset',
   'server-config:update',
+  'settings:getLanguage',
+  'settings:setLanguage',
 ])
 
 function invokeAllowedChannel(channel: string, ...args: any[]): Promise<any> {
@@ -306,9 +306,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     updateEnabledSkills: (skills: string[]) => ipcRenderer.invoke('agentx:updateEnabledSkills', skills),
     importSkill: (zipPath: string) => ipcRenderer.invoke('agentx:importSkill', zipPath),
     deleteSkill: (skillName: string) => ipcRenderer.invoke('agentx:deleteSkill', skillName),
-    // KNUTH-FEAT 2026-07-08: 监听 AgentX 配置变更广播,
-    // 让打开着的 AgentX 窗口在用户于设置窗口改完 API Key 后能重新检查配置 + 重启会话,
-    // 不必关重开窗口。
     onConfigChange: (callback: (payload: { config: AgentXConfig }) => void) => {
       const listener = (_event: IpcRendererEvent, payload: { config: AgentXConfig }) => {
         callback(payload)

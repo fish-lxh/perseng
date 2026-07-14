@@ -1,7 +1,11 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
+interface RolexActionDispatcherLike {
+  isV2Role(roleId: string): Promise<boolean>
+  dispatch(operation: 'activate', args: { role: string }): Promise<unknown>
+}
 
-const execFileAsync = promisify(execFile)
+interface CoreCliLike {
+  execute(command: 'action', args: [string, string?]): Promise<unknown>
+}
 
 /**
  * Activation result returned by a role adapter
@@ -23,7 +27,8 @@ export interface ActivationAdapter {
 
 /**
  * Perseng Activation Adapter - 基础设施层实现
- * 通过调用 @promptx/cli 激活角色(CLI bin 名仍为 promptx,因 npm 包名未改)
+ * 统一走进程内 @promptx/core 激活角色，避免 Windows 下 `.cmd` / codepage
+ * 导致的中文输出乱码。
  */
 export class PersengActivationAdapter implements ActivationAdapter {
   async activate(roleId: string): Promise<ActivationResult> {
@@ -32,20 +37,37 @@ export class PersengActivationAdapter implements ActivationAdapter {
         throw new Error('Invalid role ID')
       }
 
-      // 直接以参数数组调用 CLI，避免命令拼接带来的注入风险。
-      const command = process.platform === 'win32' ? 'promptx.cmd' : 'promptx'
-      const { stdout } = await execFileAsync(command, ['action', roleId], { windowsHide: true })
+      const { RolexActionDispatcher } = require('@promptx/core/rolex') as {
+        RolexActionDispatcher: new () => RolexActionDispatcherLike
+      }
+      const dispatcher = new RolexActionDispatcher()
+      if (await dispatcher.isV2Role(roleId)) {
+        await dispatcher.dispatch('activate', { role: roleId })
+        return {
+          success: true,
+          roleId,
+          message: `Successfully activated ${roleId}`,
+          timestamp: new Date(),
+        }
+      }
 
-      // 检查输出判断是否成功
-      const success =
-        stdout.includes('角色已激活') ||
-        stdout.includes('role activated') ||
-        stdout.includes('角色激活完成')
+      // V1 激活与 MCP action 工具保持一致：直接走进程内 cli.execute('action')
+      // 避免 Windows `.cmd` / stdout/stderr codepage 链路把 UTF-8 中文打坏。
+      const core = await import('@promptx/core')
+      const coreExports = (core as any).default || core
+      const cli = (coreExports as { cli?: CoreCliLike; pouch?: { cli?: CoreCliLike } }).cli
+        || (coreExports as { pouch?: { cli?: CoreCliLike } }).pouch?.cli
+
+      if (!cli || typeof cli.execute !== 'function') {
+        throw new Error('CLI not available in @promptx/core')
+      }
+
+      await cli.execute('action', [roleId])
 
       return {
-        success,
+        success: true,
         roleId,
-        message: success ? `Successfully activated ${roleId}` : 'Activation failed',
+        message: `Successfully activated ${roleId}`,
         timestamp: new Date(),
       }
     } catch (error) {
