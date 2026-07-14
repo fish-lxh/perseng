@@ -26,3 +26,9 @@ Thumbs.db
 *.tmp
 temp/
 tmp/
+
+# Debug residue (CDP / debug scripts — dev only)
+__cdp-eval.cjs
+__cdp-result.txt
+__debug-list.cjs
+__debug-mcp-check.cjs

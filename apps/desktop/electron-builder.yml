@@ -6,6 +6,8 @@ directories:
   output: release
   buildResources: assets
 
+afterPack: ./scripts/after-pack-inject-stub.cjs
+
 files:
   - "out/**/*"
   - "assets/**/*"
