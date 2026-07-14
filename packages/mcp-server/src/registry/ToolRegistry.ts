@@ -104,9 +104,12 @@ export class MapToolRegistry implements ToolRegistry {
  * 通过 registry.list() 后统一注入；这里只返回基础 ToolWithHandler。
  */
 export function toToolWithHandler(reg: ToolRegistration): ToolWithHandler {
+  // Try to extract original description stored on the handler, fallback to derive
+  const actualDescription = (reg.handler as any)?.description || deriveDescription(reg.manifest);
+
   const tool: ToolWithHandler = {
     name: reg.manifest.name,
-    description: deriveDescription(reg.manifest),
+    description: actualDescription,
     inputSchema: reg.manifest.inputSchema as unknown as ToolWithHandler['inputSchema'],
     handler: reg.handler,
   }

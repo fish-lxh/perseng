@@ -14,8 +14,38 @@ export const manifest: ToolManifest = {
     type: 'object',
     properties: {
       role: { type: 'string' },
-      engrams: { type: 'array' },
+      engrams: {
+        type: 'array',
+        description: 'Array of engram objects for batch memory storage. Each contains content, schema, strength, type',
+        items: {
+          type: 'object',
+          properties: {
+            content: {
+              type: 'string',
+              description: 'Raw experience content to save'
+            },
+            schema: {
+              type: 'string',
+              description: 'Space-separated or dash-separated keywords extracted from content. Use original words, do not invent new ones.'
+            },
+            strength: {
+              type: 'number',
+              description: 'Memory strength (0-1). Higher = more important, affects retrieval priority.',
+              minimum: 0,
+              maximum: 1,
+              default: 0.8
+            },
+            type: {
+              type: 'string',
+              description: 'Engram type: ATOMIC (facts, entities), LINK (relationships, connections), PATTERN (processes, methodologies)',
+              enum: ['ATOMIC', 'LINK', 'PATTERN']
+            }
+          },
+          required: ['content', 'schema', 'strength', 'type']
+        },
+        minItems: 1
+      }
     },
-    required: ['role', 'engrams'],
+    required: ['role', 'engrams']
   },
 }

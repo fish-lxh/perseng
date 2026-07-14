@@ -35,12 +35,12 @@ export function createLearningTool(enableV2: boolean): ToolWithHandler {
 
 | Operation | Required Params | Description |
 |-----------|----------------|-------------|
-| reflect | encounters, experience, id | Create experience from encounters (pass encounters:[] to create directly) |
-| realize | experiences, principle, id | Distill principles from experiences |
-| master | procedure, id | Create standard procedures from principles |
-| forget | nodeId | Remove outdated knowledge |
-| synthesize | role, name, source, type | Teach knowledge to another role |
-| skill | locator | Load a skill resource |
+| reflect | encounters, experience | Create experience from encounters. Pass encounters:[] to create directly without consuming encounters. |
+| realize | experiences, principle | Distill principles from existing experiences. experiences must be an array of experience IDs. |
+| master | procedure | Create standard procedures (SOP) from principles. |
+| forget | nodeId | Remove outdated knowledge node. |
+| synthesize | name, source, role | Teach knowledge to **another** role. name = knowledge node ID under the target role; role = target role ID; source = Gherkin Feature knowledge text. |
+| skill | locator | Load a skill resource (e.g., npm:@scope/package). |
 
 ## Learning Cycle
 
@@ -58,11 +58,11 @@ reflect (create experience) → realize (distill principle) → master (create p
 ## Examples
 
 \`\`\`json
-{ "operation": "reflect", "role": "_", "encounters": [], "experience": "Feature: API Design Experience\\n  Scenario: Problem\\n    Then learned to use pagination", "id": "exp-1" }
-{ "operation": "realize", "role": "_", "experiences": ["exp-1"], "principle": "Feature: API Principle\\n  Scenario: Always paginate\\n    Then use cursor-based pagination", "id": "p-1" }
-{ "operation": "master", "role": "_", "procedure": "Feature: API SOP\\n  Scenario: New endpoint\\n    When creating endpoint\\n    Then add pagination\\n    And add rate limiting", "id": "sop-1" }
+{ "operation": "reflect", "encounters": [], "experience": "Feature: API Design Experience\\n  Scenario: Problem\\n    Then learned to use pagination", "id": "exp-1" }
+{ "operation": "realize", "experiences": ["exp-1"], "principle": "Feature: API Principle\\n  Scenario: Always paginate\\n    Then use cursor-based pagination", "id": "p-1" }
+{ "operation": "master", "procedure": "Feature: API SOP\\n  Scenario: New endpoint\\n    When creating endpoint\\n    Then add pagination\\n    And add rate limiting", "id": "sop-1" }
 { "operation": "synthesize", "role": "backend-dev", "name": "api-knowledge", "source": "Feature: API Best Practices...", "type": "knowledge" }
-{ "operation": "forget", "role": "_", "nodeId": "outdated-id" }
+{ "operation": "forget", "nodeId": "outdated-id" }
 \`\`\`
 
 ## Prerequisites
@@ -82,7 +82,7 @@ A V2 role must be activated first via the \`action\` tool before using learning 
         },
         role: {
           type: 'string',
-          description: 'Active role ID ("_" for current role), or target role ID for synthesize'
+          description: 'Active role ID. If omitted, uses the currently active role. For synthesize, this is the target role ID.'
         },
         name: {
           type: 'string',
@@ -131,7 +131,9 @@ A V2 role must be activated first via the \`action\` tool before using learning 
           description: 'Resource locator for skill (e.g., npm:@scope/package)'
         }
       },
-      required: ['role', 'operation']
+      // KNUTH-FIX 2026-07-13 (Bug 6): role 非必填。
+      // reflect 用 encounters；synthesize 的 role 是目标角色。未传时用当前激活角色。
+      required: ['operation']
     },
     handler: async (args: Record<string, any>) => {
       const operation = args.operation;
@@ -172,12 +174,34 @@ learning 工具仅支持 V2 角色（RoleX）。V1 角色（DPML）请使用 rec
 
 **如需使用 learning 工具**，请先创建 V2 角色：
 \`\`\`json
-{ "operation": "born", "role": "_", "name": "my-role", "source": "Feature: ..." }
+{ "operation": "born", "name": "my-role", "source": "Feature: ..." }
 \`\`\``
             });
           }
         } catch (e) {
           console.warn('[learning] V2 role check failed, continuing:', e);
+        }
+      }
+
+      // BUG-FIX 2026-07-13 (Bug 3): 必填参数批量校验。
+      // dispatcher 逐字段抛错（如 "encounters is required for reflect"），
+      // 此处一次性报告缺失字段，避免 AI 多次尝试。
+      const requiredByOp: Record<string, string[]> = {
+        reflect: ['encounters'],
+        realize: ['experiences'],
+        master: ['procedure'],
+        synthesize: ['name'],
+        forget: ['nodeId'],
+        skill: ['locator'],
+      }
+      const required = requiredByOp[operation]
+      if (required) {
+        const missing = required.filter((f) => args[f] === undefined || args[f] === null || args[f] === '')
+        if (missing.length) {
+          return outputAdapter.convertToMCPFormat({
+            type: 'error',
+            content: `❌ ${operation} 操作缺少必填参数: ${missing.join(', ')}\n\n各操作必填参数:\n  reflect: encounters, experience\n  realize: experiences, principle\n  master: procedure\n  synthesize: name, source, role\n  forget: nodeId\n  skill: locator`,
+          });
         }
       }
 

@@ -10,5 +10,5 @@ export const manifest: ToolManifest = {
   capabilities: ['tool:execute'],
   dependencies: ['@promptx/core'],
   schemaVersion: 1,
-  inputSchema: { type: 'object' },
+  inputSchema: { type: 'object', required: ['yaml'] },
 }

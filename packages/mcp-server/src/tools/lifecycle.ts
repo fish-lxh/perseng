@@ -52,12 +52,12 @@ want (create goal) → plan (create plan, MUST pass id) → todo (create tasks) 
 ## Examples
 
 \`\`\`json
-{ "operation": "want", "role": "_", "name": "build-api", "source": "Feature: Build REST API\\n  As a developer..." }
-{ "operation": "plan", "role": "_", "source": "Feature: API Design\\n  Scenario: endpoints...", "id": "api-plan" }
-{ "operation": "todo", "role": "_", "name": "implement-auth", "source": "Feature: Auth endpoint..." }
-{ "operation": "finish", "role": "_", "name": "implement-auth", "encounter": "Encountered CORS issues..." }
-{ "operation": "achieve", "role": "_", "experience": "learned REST best practices..." }
-{ "operation": "focus", "role": "_", "name": "api-plan" }
+{ "operation": "want", "name": "build-api", "source": "Feature: Build REST API\\n  As a developer..." }
+{ "operation": "plan", "source": "Feature: API Design\\n  Scenario: endpoints...", "id": "api-plan" }
+{ "operation": "todo", "name": "implement-auth", "source": "Feature: Auth endpoint..." }
+{ "operation": "finish", "name": "implement-auth", "encounter": "Encountered CORS issues..." }
+{ "operation": "achieve", "experience": "learned REST best practices..." }
+{ "operation": "focus", "name": "api-plan" }
 \`\`\`
 
 ## Prerequisites
@@ -77,7 +77,7 @@ A V2 role must be activated first via the \`action\` tool before using lifecycle
         },
         role: {
           type: 'string',
-          description: 'Active role ID, or "_" to use the currently active role'
+          description: 'Active role ID. If omitted, uses the currently active role.'
         },
         name: {
           type: 'string',
@@ -104,7 +104,9 @@ A V2 role must be activated first via the \`action\` tool before using lifecycle
           description: 'Encounter description for finish operation'
         }
       },
-      required: ['role', 'operation']
+      // KNUTH-FIX 2026-07-13 (Bug 6): role 非必填。
+      // want/todo 等用 name；role 未传或 "_" 时 handler 自动用当前激活角色。
+      required: ['operation']
     },
     handler: async (args: Record<string, any>) => {
       const operation = args.operation;
@@ -135,16 +137,21 @@ A V2 role must be activated first via the \`action\` tool before using lifecycle
           if (!isV2) {
             return outputAdapter.convertToMCPFormat({
               type: 'error',
-              content: `❌ V1 角色 "${args.role}" 不支持 lifecycle 工具
+              content: `❌ 角色 "${args.role}" 是 V1（DPML）角色，不支持 lifecycle 工具
 
-lifecycle 工具仅支持 V2 角色（RoleX）。V1 角色（DPML）不支持目标与任务管理。
+lifecycle 仅支持 V2（RoleX）角色的目标与任务管理。
 
-**解决方案**：
-1. 先使用 action 工具创建一个 V2 角色：
+**两个选择**：
+
+A. 继续用 V1 角色 - 可用 recall/remember 管理知识，但不支持目标/任务管理
+
+B. 创建 V2 角色以使用 lifecycle：
+1. 创建 V2 角色：
 \`\`\`json
-{ "operation": "born", "role": "_", "name": "my-role", "source": "Feature: ..." }
+{ "operation": "born", "name": "my-role", "source": "Feature: ..." }
 \`\`\`
-2. 然后激活该 V2 角色后再使用 lifecycle 工具`
+2. 激活: action({ "operation": "activate", "role": "my-role" })
+3. 再调用 lifecycle 操作目标与任务`
             });
           }
         } catch (e) {

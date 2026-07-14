@@ -159,6 +159,33 @@ V2 角色（RoleX）使用数据库存储和认知循环系统，请使用 learn
       console.warn('[remember] V2 role check failed, continuing:', e);
     }
 
+    // BUG-FIX 2026-07-13 (Bug 2): engram 字段批量校验。
+    // core 的 Engram 校验逐字段抛错（content -> schema -> strength -> type），
+    // AI 需多次尝试才能补全。此处一次性收集所有缺失/误用字段，
+    // 并提示常见错误（text -> content, weight -> strength）。
+    const engramErrors: string[] = []
+    const engrams: any[] = Array.isArray(args.engrams) ? args.engrams : []
+    engrams.forEach((eng: any, i: number) => {
+      const missing: string[] = []
+      if (!eng?.content) missing.push('content')
+      if (!eng?.schema) missing.push('schema')
+      if (eng?.strength === undefined || eng?.strength === null) missing.push('strength')
+      if (!eng?.type) missing.push('type')
+      if (eng?.text !== undefined && !eng?.content) missing.push("（提示：用了 'text'，应为 'content'）")
+      if (eng?.weight !== undefined && eng?.strength === undefined) missing.push("（提示：用了 'weight'，应为 'strength'）")
+      if (eng?.type && !['ATOMIC', 'LINK', 'PATTERN'].includes(eng.type)) missing.push(`（type '${eng.type}' 无效，应为 ATOMIC/LINK/PATTERN）`)
+      if (missing.length) engramErrors.push(`engrams[${i}]: ${missing.join(', ')}`)
+    })
+    if (engramErrors.length) {
+      return outputAdapter.convertToMCPFormat({
+        type: 'error',
+        content: '❌ engram 字段校验失败:\n\n' +
+          engramErrors.join('\n') +
+          '\n\n必需字段: content, schema, strength (0-1), type (ATOMIC/LINK/PATTERN)\n\n示例:\n' +
+          JSON.stringify({ role: args.role, engrams: [{ content: 'Redis default port is 6379', schema: 'redis port 6379', strength: 0.8, type: 'ATOMIC' }] }, null, 2),
+      });
+    }
+
     const cli = (coreExports as any).cli || (coreExports as any).pouch?.cli;
 
     if (!cli || !cli.execute) {

@@ -67,11 +67,11 @@ export function createOrganizationTool(enableV2: boolean): ToolWithHandler {
 ## Examples
 
 \`\`\`json
-{ "operation": "found", "role": "_", "name": "dev-team", "source": "Feature: Dev Team\\n  Build products..." }
-{ "operation": "hire", "role": "_", "name": "my-dev", "org": "dev-team" }
-{ "operation": "establish", "role": "_", "name": "tech-lead", "source": "Feature: Tech Lead...", "org": "dev-team" }
-{ "operation": "appoint", "role": "_", "name": "my-dev", "position": "tech-lead", "org": "dev-team" }
-{ "operation": "directory", "role": "_" }
+{ "operation": "found", "name": "dev-team", "source": "Feature: Dev Team\\n  Build products..." }
+{ "operation": "hire", "name": "my-dev", "org": "dev-team" }
+{ "operation": "establish", "name": "tech-lead", "source": "Feature: Tech Lead...", "org": "dev-team" }
+{ "operation": "appoint", "name": "my-dev", "position": "tech-lead", "org": "dev-team" }
+{ "operation": "directory" }
 \`\`\``;
 
   const tool: ToolWithHandler = {
@@ -92,7 +92,7 @@ export function createOrganizationTool(enableV2: boolean): ToolWithHandler {
         },
         role: {
           type: 'string',
-          description: 'Active role ID, or "_" to use the currently active role'
+          description: 'Active role ID. If omitted, uses the currently active role.'
         },
         name: {
           type: 'string',
@@ -131,7 +131,9 @@ export function createOrganizationTool(enableV2: boolean): ToolWithHandler {
           description: 'Content for charter/charge/train operations'
         }
       },
-      required: ['role', 'operation']
+      // KNUTH-FIX 2026-07-13 (Bug 6): role 非必填。
+      // found 用 name，directory 无必填。未传时用当前激活角色。
+      required: ['operation']
     },
     handler: async (args: Record<string, any>) => {
       const operation = args.operation;
@@ -167,7 +169,7 @@ organization 工具仅支持 V2 角色（RoleX）。
 
 **如需使用 organization 工具**，请先创建 V2 角色：
 \`\`\`json
-{ "operation": "born", "role": "_", "name": "my-role", "source": "Feature: ..." }
+{ "operation": "born", "name": "my-role", "source": "Feature: ..." }
 \`\`\``
             });
           }
@@ -178,6 +180,34 @@ organization 工具仅支持 V2 角色（RoleX）。
 
       let result;
       try {
+        // 批量校验必填参数（dispatcher 一次只抛一个错，这里一次性报全缺失字段）
+        const requiredByOp: Record<string, string[]> = {
+          found: ['name'],
+          establish: ['name', 'source', 'org'],
+          hire: ['name', 'org'],
+          fire: ['name', 'org'],
+          appoint: ['name', 'position', 'org'],
+          dismiss: ['name', 'org'],
+          retire: ['individual'],
+          die: ['individual'],
+          rehire: ['individual'],
+          train: ['individual', 'skillId'],
+          charter: ['org', 'content'],
+          dissolve: ['org'],
+          charge: ['position', 'content'],
+          require: ['position', 'skill'],
+          abolish: ['position'],
+        }
+        const required = requiredByOp[operation]
+        if (required) {
+          const missing = required.filter((f) => args[f] === undefined || args[f] === null || args[f] === '')
+          if (missing.length) {
+            return outputAdapter.convertToMCPFormat({
+              type: 'error',
+              content: `❌ ${operation} 操作缺少必填参数: ${missing.join(', ')}\n\n各操作必填参数:\n  found: name\n  establish: name, source, org\n  hire/fire/dismiss: name, org\n  appoint: name, position, org\n  retire/die/rehire: individual\n  train: individual, skillId\n  charter: org, content\n  dissolve: org\n  charge: position, content\n  require: position, skill\n  abolish: position\n  directory: 无（列出全部组织）`,
+            });
+          }
+        }
         result = await dispatcher.dispatch(operation, args);
       } catch (e: any) {
         // KNUTH-FEAT 2026-07-11 (M4): 失败路径不 emit

@@ -73,6 +73,8 @@ import * as learningModule from '../learning.js'
 import * as organizationModule from '../organization.js'
 import { recallTool } from '../recall.js'
 import { rememberTool } from '../remember.js'
+import { toolxTool } from '../toolx.js'
+import { manifest as learningManifest } from '../learning.manifest.js'
 
 // ============================================================================
 // helpers
@@ -144,6 +146,27 @@ describe('action tool — independent happy/error path', () => {
     } as any)
     expect(result.isError).toBeFalsy()
   })
+
+  it('I-AT-4: [Bug 6] action inputSchema.required 不含 role - born 不被 schema 拦截', () => {
+    const tool = actionModule.createActionTool(true)
+    const required = (tool.inputSchema as any).required as string[]
+    expect(required).not.toContain('role')
+    expect(required).toEqual([])
+  })
+
+  it('I-AT-5: [Bug 6] born 不传 role 也能成功（无需魔法值 role:"_"）', async () => {
+    const tool = actionModule.createActionTool(true)
+    const { bus, captured } = captureBus()
+    tool.setEventBus!(bus)
+    const result = await tool.handler({
+      operation: 'born',
+      name: 'my-dev',
+      source: 'Feature: x',
+    } as any)
+    expect(result.isError).toBeFalsy()
+    expect(dispatcherStub.dispatch).toHaveBeenCalledWith('born', expect.anything())
+    expect(captured.some((e) => e['type'] === 'action.born')).toBe(true)
+  })
 })
 
 // ============================================================================
@@ -175,6 +198,13 @@ describe('lifecycle tool — independent happy/error path', () => {
     expect(text).toMatch(/V1/)
     expect(text).toMatch(/不支持 lifecycle/)
   })
+
+  it('I-LC-3: [Bug 6] lifecycle inputSchema.required 不含 role', () => {
+    const tool = lifecycleModule.createLifecycleTool(true)
+    const required = (tool.inputSchema as any).required as string[]
+    expect(required).not.toContain('role')
+    expect(required).toEqual(['operation'])
+  })
 })
 
 // ============================================================================
@@ -189,12 +219,20 @@ describe('learning tool — independent happy/error path', () => {
     const result = await tool.handler({
       operation: 'reflect',
       role: '_',
+      encounters: 'enc1',
       name: 'n1',
       id: 'p1',
     } as any)
     expect(result.isError).toBeFalsy()
     expect(dispatcherStub.dispatch).toHaveBeenCalledWith('reflect', expect.anything())
     expect(captured.some((e) => e['type'] === 'learning.reflect')).toBe(true)
+  })
+
+  it('I-LR-2: [Bug 6] learning inputSchema.required 不含 role', () => {
+    const tool = learningModule.createLearningTool(true)
+    const required = (tool.inputSchema as any).required as string[]
+    expect(required).not.toContain('role')
+    expect(required).toEqual(['operation'])
   })
 })
 
@@ -212,10 +250,18 @@ describe('organization tool — independent happy/error path', () => {
       role: '_',
       org: 'o1',
       name: 'd1',
+      source: 'Feature: Tech Lead',
     } as any)
     expect(result.isError).toBeFalsy()
     expect(dispatcherStub.dispatch).toHaveBeenCalledWith('establish', expect.anything())
     expect(captured.some((e) => e['type'] === 'organization.establish')).toBe(true)
+  })
+
+  it('I-OG-2: [Bug 6] organization inputSchema.required 不含 role', () => {
+    const tool = organizationModule.createOrganizationTool(true)
+    const required = (tool.inputSchema as any).required as string[]
+    expect(required).not.toContain('role')
+    expect(required).toEqual(['operation'])
   })
 })
 
@@ -265,5 +311,112 @@ describe('remember tool — independent happy/error path', () => {
     const text = (result.content[0] as { text: string }).text
     expect(text).toMatch(/V2/)
     expect(text).toMatch(/不支持 remember/)
+  })
+})
+
+// ============================================================================
+// toolx
+// ============================================================================
+
+describe('toolx tool - independent happy/error path', () => {
+  it('I-TX-1: [Bug 1] 空参数调用抛友好错误（不抛 JS 崩溃）', async () => {
+    await expect(toolxTool.handler({} as any)).rejects.toThrow(/缺少必需参数|yaml/)
+  })
+
+  it('I-TX-2: [Bug 1] yaml 为 undefined 时抛友好错误', async () => {
+    await expect(toolxTool.handler({ yaml: undefined } as any)).rejects.toThrow(/缺少必需参数/)
+  })
+
+  it('I-TX-3: [Bug 1] yaml 为空字符串/纯空白时抛友好错误', async () => {
+    await expect(toolxTool.handler({ yaml: '   ' } as any)).rejects.toThrow(/缺少必需参数/)
+  })
+})
+
+// ============================================================================
+// Bug 2-5: 批量参数校验 & 友好提示
+// ============================================================================
+
+describe('remember tool - [Bug 2] engram 字段批量校验', () => {
+  it('I-RM-3: [Bug 2] engram 缺 content/schema/strength/type -> 一次报全', async () => {
+    const result = await rememberTool.handler({
+      role: 'luban',
+      engrams: [{}],
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/engram 字段校验失败/)
+    expect(text).toMatch(/content/)
+    expect(text).toMatch(/schema/)
+    expect(text).toMatch(/strength/)
+    expect(text).toMatch(/type/)
+    // 缺字段不应走到 cli
+    expect(cliExecute).not.toHaveBeenCalled()
+  })
+
+  it('I-RM-4: [Bug 2] 用 text/weight 错误字段名 -> 提示正确字段名', async () => {
+    const result = await rememberTool.handler({
+      role: 'luban',
+      engrams: [{ text: 'x', weight: 0.5, schema: 'kw', type: 'ATOMIC' }],
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/用了 'text'，应为 'content'/)
+    expect(text).toMatch(/用了 'weight'，应为 'strength'/)
+  })
+})
+
+describe('learning tool - [Bug 3] forge 移除 & 批量校验', () => {
+  it('I-LR-3: [Bug 3] forge 不在 manifest capabilities', () => {
+    const caps = (learningManifest as any).capabilities as string[]
+    expect(caps).not.toContain('learning:forge')
+  })
+
+  it('I-LR-4: [Bug 3] reflect 缺 encounters -> 友好错误一次报全', async () => {
+    const tool = learningModule.createLearningTool(true)
+    const result = await tool.handler({
+      operation: 'reflect',
+      role: '_',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/reflect 操作缺少必填参数: encounters/)
+    expect(dispatcherStub.dispatch).not.toHaveBeenCalled()
+  })
+})
+
+describe('lifecycle tool - [Bug 4] V1 提示人性化', () => {
+  it('I-LC-4: [Bug 4] V1 角色提示给出两个选择（A/B）', async () => {
+    const tool = lifecycleModule.createLifecycleTool(true)
+    const result = await tool.handler({
+      operation: 'focus',
+      role: 'luban',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/两个选择/)
+    expect(text).toMatch(/A\./)
+    expect(text).toMatch(/B\./)
+    expect(dispatcherStub.dispatch).not.toHaveBeenCalled()
+  })
+})
+
+describe('organization tool - [Bug 5] found/establish 批量校验', () => {
+  it('I-OG-3: [Bug 5] found 缺 name -> 友好错误', async () => {
+    const tool = organizationModule.createOrganizationTool(true)
+    const result = await tool.handler({
+      operation: 'found',
+      role: '_',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/found 操作缺少必填参数: name/)
+    expect(dispatcherStub.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('I-OG-4: [Bug 5] establish 缺 source, org -> 一次报全', async () => {
+    const tool = organizationModule.createOrganizationTool(true)
+    const result = await tool.handler({
+      operation: 'establish',
+      role: '_',
+      name: 'd1',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/establish 操作缺少必填参数: source, org/)
+    expect(dispatcherStub.dispatch).not.toHaveBeenCalled()
   })
 })

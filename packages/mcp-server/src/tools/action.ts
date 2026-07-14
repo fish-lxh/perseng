@@ -91,6 +91,18 @@ Use \`version\` parameter to force a specific version: \`"v1"\` for DPML, \`"v2"
 
 > System roles require exact ID match. Use \`discover\` to list all available roles.
 
+## V1 vs V2 Activation
+
+| Aspect | V1 (DPML) | V2 (RoleX) |
+|---|---|---|
+| Activate | { "role": "name" } | { "operation": "activate", "role": "name" } |
+| Create role | predefined only | { "operation": "born", "name": "...", "source": "..." } |
+| Force version | "version": "v1" | "version": "v2" |
+| Companion tools | recall / remember | + lifecycle / learning / organization |
+
+activate auto-detects version (V2 first, fallback V1). Use "version" to force.
+role is optional for born/identity/archive/unarchive/delete (they use name/roleIds).
+
 ## Examples
 
 **Activate a role (V1 or V2 auto-detect):**
@@ -100,7 +112,7 @@ Use \`version\` parameter to force a specific version: \`"v1"\` for DPML, \`"v2"
 ${enableV2 ? `
 **Create a V2 role:**
 \`\`\`json
-{ "operation": "born", "role": "_", "name": "my-dev", "source": "Feature: Developer\\n  As a developer..." }
+{ "operation": "born", "name": "my-dev", "source": "Feature: Developer\\n  As a developer..." }
 \`\`\`
 
 **Get role identity:**
@@ -201,7 +213,11 @@ After activating a V2 role, use these tools for further operations:
           }
         } : {})
       },
-      required: ['role']
+      // KNUTH-FIX 2026-07-13 (Bug 6): 放宽 required。
+      // born/identity/archive/unarchive/delete 不需要 role（它们用 name/roleIds），
+      // 强制 role 必填会让 MCP 客户端 schema 校验拦截 born 调用 -> V2 创建链路不可用。
+      // handler 内按 operation 做必填校验（activateOp/bornOp 等已校验各自必填字段）。
+      required: []
     },
     handler: async (args: {
       role: string;

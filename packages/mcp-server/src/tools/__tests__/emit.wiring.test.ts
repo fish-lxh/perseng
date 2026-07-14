@@ -199,7 +199,17 @@ describe('M4 learning tool — emit wiring', () => {
       tool.setEventBus!(bus)
       // synthesize 用 target role；其余用 '_'
       const role = op === 'synthesize' ? 'target-role' : '_'
-      await tool.handler({ operation: op, role, name: 'n1', id: 'p1' } as any)
+      await tool.handler({
+        operation: op,
+        role,
+        name: 'n1',
+        id: 'p1',
+        encounters: 'e',
+        experiences: 'x',
+        procedure: 'p',
+        nodeId: 'n1',
+        locator: 'l',
+      } as any)
       const evs = captured.filter((e) => e.type === `learning.${op}`)
       expect(evs.length).toBeGreaterThanOrEqual(1)
       if (evs.length >= 1) {
@@ -237,6 +247,10 @@ describe('M4 organization tool — emit wiring', () => {
         org: 'o',
         position: 'p',
         individual: 'i',
+        source: 's',
+        content: 'c',
+        skill: 'sk',
+        skillId: 'si',
       } as any)
       const evs = captured.filter((e) => e.type === `organization.${op}`)
       expect(evs.length).toBeGreaterThanOrEqual(1)

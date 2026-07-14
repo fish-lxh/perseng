@@ -72,10 +72,23 @@ export function buildToolRegistry(enableV2: boolean): MapToolRegistry {
   for (const manifest of ALL_MANIFESTS) {
     const tool = handlerByName(manifest.name, enableV2)
     if (!tool) continue
+    
+    // KNUTH-FIX: Override manifest schema/description with actual tool schema/description
+    // The actual tools (like rememberTool) have more detailed descriptions (with markdown) 
+    // and correctly nested schemas (like array items) that are missing in the bare manifests.
+    const enhancedManifest = {
+      ...manifest,
+      inputSchema: tool.inputSchema || manifest.inputSchema,
+    }
+    
     const reg: ToolRegistration = {
-      manifest,
+      manifest: enhancedManifest,
       handler: tool.handler,
       setEventBus: tool.setEventBus as unknown as ((bus: unknown) => void) | undefined,
+    }
+    // Store original description on handler so toToolWithHandler can extract it
+    if (tool.description) {
+      ;(reg.handler as any).description = tool.description;
     }
     registry.register(reg)
   }

@@ -77,6 +77,20 @@ parameters:
   },
 
   handler: async (args: { yaml: string }) => {
+    // BUG-FIX 2026-07-13 (Bug 1): 空参数校验。
+    // 不传参数时 args.yaml 为 undefined，直接 .trim() 会抛原始 JS 错误
+    // "Cannot read properties of undefined (reading 'trim')"，对用户/AI 不友好。
+    // 提前校验，抛出带用法示例的清晰错误（框架会转为 isError 返回客户端）。
+    if (!args || typeof args.yaml !== 'string' || args.yaml.trim().length === 0) {
+      throw new Error(
+        '缺少必需参数: yaml\n\n' +
+        '请提供 YAML 格式的工具调用配置。\n\n' +
+        '示例 1 - 读取工具手册（推荐先执行）:\n' +
+        '  yaml: |\n    tool: tool://filesystem\n    mode: manual\n\n' +
+        '示例 2 - 直接传 tool URL:\n  yaml: tool://filesystem\n\n' +
+        '使用 discover 工具查看所有可用工具。'
+      );
+    }
     try {
       // Auto-correct common AI mistakes
       let yamlInput = args.yaml.trim();

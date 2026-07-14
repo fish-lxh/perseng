@@ -12,9 +12,10 @@ export const manifest: ToolManifest = {
     'role:born',
     'role:identity',
     'role:archive',
+    'role:unarchive',
     'role:delete',
   ],
   dependencies: ['@promptx/core'],
   schemaVersion: 1,
-  inputSchema: { type: 'object', required: ['role'] },
+  inputSchema: { type: 'object', required: [] },
 }

@@ -17,5 +17,5 @@ export const manifest: ToolManifest = {
   ],
   dependencies: ['@promptx/core'],
   schemaVersion: 1,
-  inputSchema: { type: 'object', required: ['operation', 'role'] },
+  inputSchema: { type: 'object', required: ['operation'] },
 }

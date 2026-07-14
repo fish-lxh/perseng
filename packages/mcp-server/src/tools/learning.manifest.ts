@@ -11,7 +11,6 @@ export const manifest: ToolManifest = {
     'learning:reflect',
     'learning:realize',
     'learning:master',
-    'learning:forge',
     'learning:synthesize',
   ],
   dependencies: ['@promptx/core'],
