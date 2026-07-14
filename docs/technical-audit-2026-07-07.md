@@ -171,7 +171,7 @@ pnpm test
 
 当前没有未收敛的红色构建项，但仍存在后续值得继续推进的非阻塞风险：
 
-- ~~`packages/core` 仍以大量 JS 源码为主，类型边界不如 TS 包稳定~~ → 2026-07-08 闭环：见 §15（P0 Step 0B 完成）
+- `packages/core` 仍以大量 JS 源码为主，类型边界不如 TS 包稳定
 - MCP Server 的接口测试虽然已恢复，但覆盖重点仍偏“契约存在性”，可进一步增加真实 transport 行为断言
 - Electron 桌面端的安全模型已明显收紧，但仍建议继续审查外部资源打开、工作区授权、日志脱敏等边角路径
 - 目前尚未形成一份正式的依赖漏洞扫描归档文档，可在后续交付中补充版本、CVE、处置状态三元表
@@ -512,11 +512,9 @@ pnpm test
 - `packages/core`
   - 目标：降低 JS 历史包对全仓类型系统的持续污染
   - 动作：优先迁移最常被下游消费的模块到 TS
-  - **2026-07-08 状态**：已完成（136 .js → .ts，详见 §15）
 - `apps/desktop/src/main`
   - 目标：避免主进程继续膨胀成全能入口
   - 动作：按领域拆 service 注册与 IPC 注册
-  - **2026-07-08 状态**：lifecycle 已抽（Step 2.3）；装配层收敛继续推进
 - `packages/runtime/src/internal/CommandHandler.ts`
   - 目标：避免 runtime 中心编排器持续变重
   - 动作：拆分 image/message/summarization 用例
@@ -581,49 +579,3 @@ pnpm test
 2. **动态工具注册 (Dynamic Tool Registry)**：不要在每次对话中挂载 `allTools`。根据当前的激活角色（V1/V2）和任务状态（例如尚未绑定 project 时），动态裁剪下发给大模型的 MCP Schema，使得 System Prompt 达到最小化。
 
 通过上述重构，预计单次对话回合的 Base Token 可缩减 **1000 - 2000 tokens**，大幅降低长会话成本并提升响应速度。
-
-## 15. 2026-07-08 增量：P0 Step 0B（packages/core JS→TS 迁移）收尾
-
-本节是对 §6 / §13 中"packages/core 类型化"P0 项的闭环记录。完整调研与执行路径见 [`docs/tech-core-migration-2026-07-08.md`](tech-core-migration-2026-07-08.md)。
-
-### 15.1 迁移范围与产出
-
-- **136 个 .js → .ts**，分 6 phase：
-  - Phase 1（0B.1）：5 叶子节点（utils/version, dpml/index 等）
-  - Phase 2（0B.2）：utils 完整 3 文件
-  - Phase 3（0B.3）：rolex 完整（Bridge + Dispatcher + 测试）
-  - Phase 4（0B.4.1/0B.4.2/0B.4.3）：pouch 30 文件（叶子 + 中间层 + 顶层 commands）
-  - Phase 5（0B.5）：4 边界 index.js（cognition / resource / toolx / core）
-  - Phase 6（0B.6）：tsup `dts: true` + 完整 turbo build 验证
-- **构建验证**：`bun run turbo build` 10/10 成功（core / cli / desktop / mcp-server / sidecar 等）
-- **测试基线**：vitest 125/125 全绿
-- **类型产物**：`dist/*.d.ts` 4 个文件（49B / 410B / 1.04KB / 1.59KB），下游 TS 消费方可获得类型
-
-### 15.2 关键约束与决策
-
-| 约束 | 决策 | 理由 |
-|------|------|------|
-| `apps/cli` tsconfig `@promptx/core` path-mapping 指向 `packages/core/src`（非 dist）| 边界 `index.ts` 使用 `const X = require('./X.js')` 而非 `import` | 避免 TS6059 rootDir 误判（apps/cli 编译时会把 core source 拉入自己的 program）|
-| tsup `module: commonjs` 不接受 `export = X` | 4 边界文件全部 `export default { ... }` | `module: ES2020` 才允许 `export =`；CJS 兼容需要 default |
-| 模块内部 require 仍用 `.js` 扩展 | vitest `extensionAlias` 自动解析 `.js → .ts` | 测试运行时可同时加载 .js 与 .ts 源 |
-| ESM 入口仍保留 `src/index.esm.js` 手工 wrapper | tsup `onSuccess` 复制到 `dist/index.mjs` | 短期保留，Phase 7 可切 ESM format 让 tsup 自动生成 |
-
-### 15.3 P0 Step 2.3（apps/desktop lifecycle 拆分）
-
-- **目标**：避免主进程继续膨胀成"超级装配中心"（§11.2.1 风险）
-- **动作**：将 `apps/desktop/src/main/index.ts` 中 `setupAppEvents / performCleanup / cleanup` 三个方法抽到独立 `lifecycle/AppLifecycle.ts`
-- **验证**：`electron-vite build` 成功，主进程入口文件 -65 行（482 → 427）
-- **后续**：主进程继续按"装配层 + 生命周期协调层 + 模块化 service"方向收敛（§11.2.1 建议）
-
-### 15.4 关闭项与遗留
-
-**已关闭**（本轮消除）：
-
-- ~~packages/core 全 JS 状态~~ → 全部 .ts
-- ~~`tsup dts: false` 阻碍下游类型消费~~ → `dts: true`
-- ~~主进程入口膨胀（482 行）~~ → -65 行
-
-**遗留**（可独立工作流）：
-
-- apps/cli 的 tsconfig `@promptx/core` path-mapping 仍指向 `src/`，boundary 文件被迫用 const+require。彻底消除需将 path-mapping 切到 `packages/core/dist`，同时配合 `apps/cli` 入口的 `import core from '@promptx/core'` 同步切换（建议作为 P1 独立任务）
-- `packages/core` 仅 4 个边界 `.d.ts`，下游消费方仍可通过 `import core` 获得 namespace 类型；但各子模块（`@promptx/core/cognition` 等）暂无独立类型导出（实际项目内也无人引用 subpath，零成本但可补）

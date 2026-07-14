@@ -528,3 +528,21 @@ apps/desktop/release/
 - CLI 启动：[cli-startup.md](./cli-startup.md)
 - 发布流程 / changesets：[RELEASE_GUIDE.md](./RELEASE_GUIDE.md)
 - 活动事件流：[desktop-timeline.md](./desktop-timeline.md)
+
+## 14. Windows 安装包补充说明（2026-07-13）
+
+- 症状：
+  `pnpm dev` 正常，但 `pnpm package:win` 生成的安装包里，Perseng MCP 没启动，AgentX 看不到 `promptx` 工具，角色激活会退化成普通对话。
+- 根因：
+  `pnpm` 的 workspace / symlink 布局不会自动生成 `node_modules/@promptx/package.json`。
+  packaged 的 `app.asar` 如果缺这个 namespace stub，Node.js 在解析 `@promptx/mcp-server` / `@promptx/core` 时可能报 `ENOENT`。
+- 关键点：
+  只在 `electron-builder` 结束后跑 `postpackage` 不够，因为那时 `setup.exe` 已经生成；补丁只会落在 `win-unpacked`，不会进安装包本体。
+- 当前正确做法：
+  1. `prebuild` 先运行 `apps/desktop/scripts/create-namespace-stub.cjs`
+  2. `electron-builder.yml` 通过 `afterPack: ./scripts/after-pack-inject-stub.cjs` 在 `nsis` 打包前修补 `app.asar`
+  3. `postpackage` 保留为 release 目录的兜底校验/补丁
+- 发布前最少验证：
+  1. 构建日志中必须看到 `[afterPack-inject-stub] stub injected into app.asar` 或 `stub already present`
+  2. 安装包启动后，托盘应显示 `http://127.0.0.1:5203/mcp`
+  3. AgentX 中输入 `Activate role dayu` 应触发 `promptx.action`，而不是退化成普通聊天
