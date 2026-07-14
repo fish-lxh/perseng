@@ -10,7 +10,7 @@ export default function RolesPage() {
   const [roles, setRoles] = useState<RoleItem[]>([])
   const [organizations, setOrganizations] = useState<OrganizationNode[]>([])
   const [query, setQuery] = useState("")
-  const [versionFilter, setVersionFilter] = useState<VersionFilter>("v2")
+  const [versionFilter, setVersionFilter] = useState<VersionFilter>("v1")
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all")
   const [loading, setLoading] = useState(false)
   const [selectedRole, setSelectedRole] = useState<RoleItem | null>(null)
@@ -137,13 +137,8 @@ export default function RolesPage() {
 
         setRoles(flat)
         if (flat.length > 0 && !selectedRole) {
-          if (useV2) {
-            const firstV2 = flat.find((r) => r.version === "v2")
-            setSelectedRole(firstV2 ?? flat[0] ?? null)
-          } else {
-            const firstV1 = flat.find((r) => r.version !== "v2")
-            setSelectedRole(firstV1 ?? flat[0] ?? null)
-          }
+          const firstV1 = flat.find((r) => r.version !== "v2")
+          setSelectedRole(firstV1 ?? flat[0] ?? null)
         }
       } else {
         toast.error(t("roles.messages.loadFailed"))

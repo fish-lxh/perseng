@@ -67,6 +67,8 @@ import {
   ClipboardDocumentCheckIcon,
   CodeBracketSquareIcon,
   MinusIcon,
+  MoonIcon,
+  SunIcon,
 } from "@heroicons/react/20/solid";
 
 type IconSize = number | string;
@@ -165,6 +167,8 @@ export const Lock = withDefaults(LockClosedIcon);
 export const Menu = withDefaults(Bars3Icon);
 export const MessageSquare = withDefaults(ChatBubbleLeftEllipsisIcon);
 export const Minus = withDefaults(MinusIcon);
+export const Moon = withDefaults(MoonIcon);
+export const Sun = withDefaults(SunIcon);
 export const PanelLeft = withDefaults(ViewColumnsIcon);
 export const Pencil = withDefaults(PencilIcon);
 export const Pickaxe = withDefaults(WrenchScrewdriverIcon);

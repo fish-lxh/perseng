@@ -245,7 +245,7 @@ function MainContent() {
             onClick={() => setNotificationOpen(true)}
           >
             <BellIcon className="h-4 w-4 mr-2" />
-            <span className="font-mono">{t("notifications.button")}</span>
+            <span className="font-mono truncate min-w-0 flex-1">{t("notifications.button")}</span>
             {unreadCount > 0 && (
               <Badge
                 variant="destructive"

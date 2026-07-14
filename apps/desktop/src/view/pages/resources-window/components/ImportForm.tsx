@@ -52,7 +52,7 @@ export function ImportForm({
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="bg-white">
+            <SelectContent className="bg-popover">
               <SelectItem value="role">{t("resources.types.role")}</SelectItem>
               <SelectItem value="tool">{t("resources.types.tool")}</SelectItem>
             </SelectContent>

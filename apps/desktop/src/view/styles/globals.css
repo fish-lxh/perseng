@@ -49,6 +49,51 @@
     --sidebar-accent-foreground: #e0f2fe;
     --sidebar-border: #1e3a5f;
     --sidebar-ring: #00f0ff;
+
+    /* body 背景层(默认 dark) */
+    --bg-radial: radial-gradient(circle at 20% 20%, #0a1a2f 0%, #050a14 60%);
+    --bg-scan: linear-gradient(180deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+
+    /* cyber-border 面板底色(默认 dark) */
+    --cyber-border-bg: rgba(10, 17, 32, 0.85);
+}
+
+/* ===== 白天主题(赛博浅色版):保留青色基因,浅色背景 + 淡化 scanline =====
+   next-themes 以 attribute="class" 给 <html> 加 .light,此处覆盖全部 token。 */
+.light {
+    --color-background: #f8fafc;
+    --color-foreground: #0a1120;
+    --color-card: #ffffff;
+    --color-card-foreground: #0a1120;
+    --color-popover: #ffffff;
+    --color-popover-foreground: #0a1120;
+    --color-primary: #0891b2;
+    --color-primary-foreground: #ffffff;
+    --color-secondary: #eef2f7;
+    --color-secondary-foreground: #0a1120;
+    --color-muted: #eef2f7;
+    --color-muted-foreground: #475569;
+    --color-accent: #eef2f7;
+    --color-accent-foreground: #0891b2;
+    --color-destructive: #e11d48;
+    --color-destructive-foreground: #ffffff;
+    --color-border: #cbd5e1;
+    --color-input: #f1f5f9;
+    --color-ring: #0891b2;
+
+    --sidebar: #ffffff;
+    --sidebar-foreground: #0a1120;
+    --sidebar-primary: #0891b2;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #eef2f7;
+    --sidebar-accent-foreground: #0891b2;
+    --sidebar-border: #cbd5e1;
+    --sidebar-ring: #0891b2;
+
+    --bg-radial: radial-gradient(circle at 20% 20%, #ffffff 0%, #eef2f7 60%);
+    --bg-scan: linear-gradient(180deg, rgba(8, 145, 178, 0.04) 1px, transparent 1px);
+
+    --cyber-border-bg: rgba(255, 255, 255, 0.85);
 }
 
 @theme inline {
@@ -69,10 +114,10 @@
     body {
         /* 不直接铺平 cyber-bg,而是用 radial + 1px 横条叠加,更贴近原型氛围 */
         background:
-            radial-gradient(circle at 20% 20%, #0a1a2f 0%, #050a14 60%),
-            linear-gradient(180deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+            var(--bg-radial),
+            var(--bg-scan);
         background-size: 100% 100%, 100% 3px;
-        color: #e0f2fe;
+        color: var(--color-foreground);
         font-family: var(--font-sans);
         -webkit-tap-highlight-color: transparent;
     }
@@ -214,7 +259,7 @@
     /* ===== 渐变描边面板 ===== */
     .cyber-border {
         position: relative;
-        background: rgba(10, 17, 32, 0.85);
+        background: var(--cyber-border-bg);
         border: 1px solid rgba(0, 240, 255, 0.2);
         box-shadow:
             inset 0 0 30px rgba(0, 240, 255, 0.03),
@@ -282,14 +327,14 @@
         height: 6px;
     }
     ::-webkit-scrollbar-track {
-        background: #0a1120;
+        background: var(--color-card);
     }
     ::-webkit-scrollbar-thumb {
-        background: #1e3a5f;
+        background: var(--color-border);
         border-radius: 3px;
     }
     ::-webkit-scrollbar-thumb:hover {
-        background: #00f0ff;
+        background: var(--color-primary);
     }
 
     /* ===== 全局禁用按钮反白 / 用户不可选 / 失焦 ===== */

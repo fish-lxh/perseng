@@ -29,6 +29,29 @@
     --chart-4: 187 70% 70%;
     --chart-5: 327 70% 70%;
   }
+
+  /* ===== 白天主题(赛博浅色版):与 styles/globals.css 的 .light 等价 HSL ===== */
+  .light {
+    --background: 210 40% 98%;          /* #f8fafc */
+    --foreground: 222 47% 8%;           /* #0a1120 */
+    --card: 0 0% 100%;                  /* #ffffff */
+    --card-foreground: 222 47% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 8%;
+    --primary: 189 92% 36%;             /* #0891b2 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 213 40% 95%;           /* #eef2f7 */
+    --secondary-foreground: 222 47% 8%;
+    --muted: 213 40% 95%;
+    --muted-foreground: 215 16% 47%;    /* #475569 */
+    --accent: 213 40% 95%;
+    --accent-foreground: 189 92% 36%;
+    --destructive: 347 77% 50%;         /* #e11d48 */
+    --destructive-foreground: 0 0% 100%;
+    --border: 215 25% 67%;              /* #cbd5e1 */
+    --input: 214 32% 96%;               /* #f1f5f9 */
+    --ring: 189 92% 36%;
+  }
 }
 
 @layer base {

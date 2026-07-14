@@ -60,7 +60,6 @@ export function ResourceImporter({
           <Button
             onClick={actions.submit}
             disabled={state.isImporting || state.filePaths.length === 0}
-            className="text-white"
           >
             {state.isImporting ? t("resources.import.actions.importing") : t("resources.import.actions.import")}
           </Button>

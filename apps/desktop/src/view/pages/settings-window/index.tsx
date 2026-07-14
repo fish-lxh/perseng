@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { toast, Toaster } from "sonner"
 import { LanguageSelector } from "./components/LanguageSelector"
+import { ThemeSelector } from "./components/ThemeSelector"
 import { MCPConfig } from "./components/MCPConfig"
 import { SkillsConfig } from "./components/SkillsConfig"
 import { WebAccessConfig } from "./components/WebAccessConfig"
@@ -247,6 +248,9 @@ function SettingsWindow() {
           <TabsContent value="system" className="flex-1 overflow-y-auto space-y-6">
             {/* 语言设置 */}
             <LanguageSelector />
+
+            {/* 主题设置 */}
+            <ThemeSelector />
 
             {/* 自启动设置 */}
             <Card>
