@@ -76,6 +76,15 @@ vi.mock('../resource/index.js', () => ({
   default: {},
 }))
 
+// KNUTH-FIX 2026-07-14: actAs V2 fallback 会动态 import RolexBridge。
+// mock isV2Role 默认返回 false（fake id 仍走 NOT_FOUND），避免测试触发真 rolex init 副作用。
+const { mockIsV2Role } = vi.hoisted(() => ({
+  mockIsV2Role: vi.fn(async (_id: string) => false),
+}))
+vi.mock('../rolex/RolexBridge.js', () => ({
+  getRolexBridge: () => ({ isV2Role: mockIsV2Role }),
+}))
+
 // 必须放在 vi.mock 之后
 const { actAs, isRegistered, ActAsError, ActAsErrorCode, _resetActAsCache } = await import('../actAs.js')
 
@@ -83,6 +92,8 @@ beforeEach(() => {
   _resetActAsCache()
   fakeRegistryData.findResourceById.mockClear()
   fakeRegistryData.getResourcesByProtocol.mockClear()
+  mockIsV2Role.mockReset()
+  mockIsV2Role.mockResolvedValue(false)
 })
 
 describe('actAs — 内容契约不变量', () => {
@@ -184,5 +195,24 @@ describe('actAs — 内容契约不变量', () => {
     expect(isRegistered('nuwa', 'role')).toBe(true)
     expect(isRegistered('nuwa', 'persona')).toBe(true)
     expect(isRegistered('story-weaving', 'skill')).toBe(true)
+  })
+
+  it('V2 角色：V1 registry 未命中但 isV2Role=true -> 返回 source=rolex 的 role result', async () => {
+    mockIsV2Role.mockResolvedValueOnce(true)
+    const result = await actAs('总指挥')
+    expect(result.kind).toBe('role')
+    expect(result.identity.id).toBe('总指挥')
+    expect(result.identity.name).toBe('总指挥')
+    expect(result.source).toBe('rolex')
+    expect(result.reference).toBe('rolex://总指挥')
+    expect(mockIsV2Role).toHaveBeenCalledWith('总指挥')
+  })
+
+  it('V2 fallback 缓存：同 session 第二次 actAs(V2角色) 不再查 isV2Role', async () => {
+    mockIsV2Role.mockResolvedValue(true)
+    await actAs('v2-role-cache')
+    const callsAfterFirst = mockIsV2Role.mock.calls.length
+    await actAs('v2-role-cache')
+    expect(mockIsV2Role.mock.calls.length).toBe(callsAfterFirst) // 命中缓存，不再查 V2
   })
 })

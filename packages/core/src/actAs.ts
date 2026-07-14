@@ -173,6 +173,45 @@ export async function actAs(id: string, opts: ActAsOptions = {}): Promise<ActAsR
   }
 
   if (!resolvedResource || !resolvedKind) {
+    // KNUTH-FIX 2026-07-14: V1 registry 未命中 -> 尝试 V2 (RoleX) 角色。
+    // V2 角色由 born 创建于 rolexjs census，不在 V1 resource registry。此前 actAs 只查 V1，
+    // 导致 action(activate)/lifecycle/learning/organization 的 actAs 前置校验误判 V2 角色
+    // "不存在"，而 action(identity) 因无此校验能成功（见 RolexBridge.identity）。
+    // 修复：V1 未命中时 fallback 查 bridge.isV2Role，命中则返回 V2 ActAsResult，
+    // 让所有走 actAs 校验的入口都能识别 V2 角色。
+    if (process.env.PERSENG_ENABLE_V2 !== '0') {
+      try {
+        // @ts-ignore - TS6307: actAs entry 不含 rolex/RolexBridge.ts (与 resource import 同模式);
+        //               运行时 dynamic import 正常, dist/actAs.js 仍 CJS 兼容。
+        const rolexMod = (await import('./rolex/RolexBridge.js')) as unknown as {
+          getRolexBridge: () => { isV2Role: (roleId: string) => Promise<boolean> }
+        }
+        const bridge = rolexMod.getRolexBridge()
+        if (await bridge.isV2Role(id)) {
+          const v2Result: ActAsResult = {
+            kind: 'role',
+            identity: { id, name: id },
+            reference: `rolex://${id}`,
+            source: 'rolex',
+            warnings: [],
+          }
+          if (scope === 'session') {
+            sessionCache.set(cacheKey, v2Result)
+          }
+          void emitRoleActivated(v2Result, opts.context, 'v2')
+          return v2Result
+        }
+      } catch (v2err) {
+        // V2 探测失败（rolex 未就绪 / census 查询异常）-> 继续走 NOT_FOUND
+        if (process.env['PERSENG_DEBUG']) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[actAs] V2 role check failed for '${id}': ${v2err instanceof Error ? v2err.message : String(v2err)}`,
+          )
+        }
+      }
+    }
+
     // 构造最全 available 列表（role 优先）
     const available: string[] = []
     for (const protocol of order) {
@@ -254,6 +293,7 @@ export async function actAs(id: string, opts: ActAsOptions = {}): Promise<ActAsR
 async function emitRoleActivated(
   result: ActAsResult,
   context: { sessionId?: string; agentId?: string } | undefined,
+  version: 'v1' | 'v2' = 'v1',
 ): Promise<void> {
   try {
     const events = (await import('@promptx/events')) as {
@@ -277,7 +317,7 @@ async function emitRoleActivated(
         roleId: result.identity.id,
         kind: result.kind,
         reference: result.reference,
-        version: 'v1',
+        version,
       },
       role: 'system',
       schemaVersion: 1,
