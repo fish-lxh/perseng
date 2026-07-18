@@ -2,11 +2,14 @@
  * Manifests 聚合单测 (3.7 P2)
  *
  * KNUTH-FEAT 2026-07-11 (RFC 目标 3.7 / 批次 3)
+ * KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 3): 加 schedule 后 9 → 10；
+ *   schedule 与 enableV2 正交，所以 V2=false 也包含 schedule（6 → 7）。
+ *
  * 验证：
- * - ALL_MANIFESTS 9 个工具全覆盖
+ * - ALL_MANIFESTS 10 个工具全覆盖
  * - findManifestsByCapability 按标签筛选
- * - createAllTools(enableV2=true) 数量 == 9
- * - createAllTools(enableV2=false) 排除 V2（= 6）
+ * - createAllTools(enableV2=true) 数量 == 10
+ * - createAllTools(enableV2=false) 排除 V2（= 7，schedule 不门控）
  */
 
 import { describe, it, expect } from 'vitest'
@@ -14,8 +17,8 @@ import { ALL_MANIFESTS, findManifestsByCapability } from '../manifests.js'
 import { createAllTools } from '../index.js'
 
 describe('ALL_MANIFESTS', () => {
-  it('M-1: 9 个 manifest（discover / action / recall / remember / toolx / timeline / lifecycle / learning / organization）', () => {
-    expect(ALL_MANIFESTS).toHaveLength(9)
+  it('M-1: 10 个 manifest（含 schedule）', () => {
+    expect(ALL_MANIFESTS).toHaveLength(10)
     const names = ALL_MANIFESTS.map((m) => m.name)
     expect(names).toEqual([
       'discover',
@@ -27,6 +30,7 @@ describe('ALL_MANIFESTS', () => {
       'lifecycle',
       'learning',
       'organization',
+      'schedule',
     ])
   })
 
@@ -69,19 +73,21 @@ describe('findManifestsByCapability', () => {
 })
 
 describe('createAllTools integration', () => {
-  it('C-1: enableV2=true → 9 工具', () => {
+  it('C-1: enableV2=true → 10 工具（含 schedule）', () => {
     const tools = createAllTools(true)
-    expect(tools).toHaveLength(9)
+    expect(tools).toHaveLength(10)
   })
 
-  it('C-2: enableV2=false → 6 工具（排除 V2）', () => {
+  it('C-2: enableV2=false → 7 工具（排除 V2，schedule 不门控）', () => {
     const tools = createAllTools(false)
     const names = tools.map((t) => t.name)
     expect(names).not.toContain('lifecycle')
     expect(names).not.toContain('learning')
     expect(names).not.toContain('organization')
-    // 期望剩下 discover / action / recall / remember / toolx / timeline
-    expect(tools).toHaveLength(6)
+    // schedule 不门控 enableV2 — 必须出现
+    expect(names).toContain('schedule')
+    // 期望剩下 discover / action / recall / remember / toolx / timeline / schedule
+    expect(tools).toHaveLength(7)
   })
 
   it('C-3: 工具 name 唯一', () => {

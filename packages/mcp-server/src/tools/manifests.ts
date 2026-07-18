@@ -15,6 +15,7 @@ import { manifest as timeline } from './timeline.manifest.js'
 import { manifest as lifecycle } from './lifecycle.manifest.js'
 import { manifest as learning } from './learning.manifest.js'
 import { manifest as organization } from './organization.manifest.js'
+import { manifest as schedule } from './schedule.manifest.js'
 
 export const ALL_MANIFESTS: ReadonlyArray<ToolManifest> = [
   discover,
@@ -26,6 +27,7 @@ export const ALL_MANIFESTS: ReadonlyArray<ToolManifest> = [
   lifecycle,
   learning,
   organization,
+  schedule,
 ] as const
 
 /** 按 capability 标签筛选 manifest */

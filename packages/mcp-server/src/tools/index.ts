@@ -23,6 +23,8 @@ export { queryTimelineTool, clearTimelineTool } from './timeline.js';
 export { lifecycleTool, createLifecycleTool } from './lifecycle.js';
 export { learningTool, createLearningTool } from './learning.js';
 export { organizationTool, createOrganizationTool } from './organization.js';
+// 调度系统工具（Phase 1）
+export { scheduleTool, createScheduleTool } from './schedule.js';
 
 // Manifest 聚合 — 给外部做 capability 查询用
 export { ALL_MANIFESTS, findManifestsByCapability } from './manifests.js';
@@ -36,6 +38,7 @@ import { queryTimelineTool, clearTimelineTool } from './timeline.js';
 import { createLifecycleTool } from './lifecycle.js';
 import { createLearningTool } from './learning.js';
 import { createOrganizationTool } from './organization.js';
+import { createScheduleTool } from './schedule.js';
 import type { ToolWithHandler } from '~/interfaces/MCPServer.js';
 import {
   MapToolRegistry,
@@ -59,6 +62,8 @@ function handlerByName(name: string, enableV2: boolean): ToolWithHandler | null 
     case 'lifecycle':      return enableV2 ? createLifecycleTool(enableV2) : null
     case 'learning':       return enableV2 ? createLearningTool(enableV2) : null
     case 'organization':   return enableV2 ? createOrganizationTool(enableV2) : null
+    // KNUTH-FEAT 2026-07-18 (Phase 1): schedule 与 enableV2 正交；V1/V2 都能用
+    case 'schedule':       return createScheduleTool(enableV2)
     default:                return null
   }
 }
