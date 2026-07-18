@@ -19,6 +19,7 @@ import { MCPOutputAdapter } from '~/utils/MCPOutputAdapter.js'
 import { safeEmit } from './_emit.js'
 import { getScheduleStore } from '~/scheduler/instance.js'
 import { validate as validateCron } from '~/scheduler/CronParser.js'
+import type { ScheduleEngine } from '~/scheduler/ScheduleEngine.js'
 import {
   DEFAULT_TIMEZONE,
   DEFAULT_TIMEOUT_MS,
@@ -29,6 +30,8 @@ const outputAdapter = new MCPOutputAdapter()
 
 // KNUTH-FEAT 2026-07-18 (Phase 1): schedule 工具 closure bus state
 let _scheduleEventBus: ToolEventBus | null = null
+// KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 4): run_now 需要的 engine 引用
+let _scheduleEngine: ScheduleEngine | null = null
 const PRODUCER = 'tool:schedule'
 const PRODUCER_VERSION = '2.4.1'
 
@@ -65,6 +68,7 @@ const requiredByOp: Record<string, string[]> = {
   resume: ['id'],
   delete: ['id'],
   history: ['id'],
+  run_now: ['id'],
   // list: 无必填
 }
 
@@ -81,6 +85,7 @@ export function createScheduleTool(_enableV2: boolean): ToolWithHandler {
 | pause | id | 暂停（active/pending → paused） |
 | resume | id | 恢复（paused → active） |
 | delete | id | 软删除（state=deleted） |
+| run_now | id | 立即同步触发一条 schedule（要求 state=active） |
 | history | id | 列最近 N 条执行记录 |
 
 ## Examples
@@ -92,14 +97,18 @@ export function createScheduleTool(_enableV2: boolean): ToolWithHandler {
 { "operation": "pause", "id": "sched-abc" }
 { "operation": "resume", "id": "sched-abc" }
 { "operation": "delete", "id": "sched-abc" }
+{ "operation": "run_now", "id": "sched-abc" }
 { "operation": "history", "id": "sched-abc", "limit": 20 }
 \`\`\`
 
 ## Notes
 
-- 8th operation \`run_now\` 在 ScheduleEngine 落地后开放（Commit 4）
+- \`run_now\` 走 ScheduleEngine 同步执行；需要 ScheduleEngine 已注入（PersengMCPServer 启动时自动装配）
 - create 时 \`cronExpr\` 必须可解析；非法会在响应里返回 error
-- \`toolArgs\` 是传给目标工具的对象（与该工具的 inputSchema 对齐）
+- \`toolArgs\` 是传给目标工具的对象（与该工具的 inputSchema 对齐）；支持模板占位符：
+  - \${now.date} / \${now.time} / \${now.weekday} / \${today.date}（按 schedule 时区）
+  - \${schedule.id} / \${schedule.name}
+  - \${run.attempt}
 - 时区默认 \`Asia/Shanghai\`；可显式传任何 IANA 名`
 
   const tool: ToolWithHandler = {
@@ -110,7 +119,7 @@ export function createScheduleTool(_enableV2: boolean): ToolWithHandler {
       properties: {
         operation: {
           type: 'string',
-          enum: ['create', 'list', 'get', 'pause', 'resume', 'delete', 'history'],
+          enum: ['create', 'list', 'get', 'pause', 'resume', 'delete', 'history', 'run_now'],
           description: 'Schedule sub-operation to perform',
         },
         // create / update 入参
@@ -388,6 +397,50 @@ ${JSON.stringify(created, null, 2)}
             })
           }
 
+          case 'run_now': {
+            if (!_scheduleEngine) {
+              return outputAdapter.convertToMCPFormat({
+                type: 'error',
+                content: `❌ ScheduleEngine 未注入 — run_now 不可用
+
+ScheduleEngine 由 PersengMCPServer 在启动时注入。如果在测试 / CLI 脚本中直接调用，请手工构造 engine 后调用 scheduleTool.setEngine(engine)。`,
+              })
+            }
+            const cur = store.get(String(args.id))
+            if (!cur) {
+              return outputAdapter.convertToMCPFormat({
+                type: 'error',
+                content: `❌ schedule '${args.id}' 不存在`,
+              })
+            }
+            if (cur.state !== 'active') {
+              return outputAdapter.convertToMCPFormat({
+                type: 'error',
+                content: `❌ schedule '${args.id}' 当前 state=${cur.state}，run_now 要求 state=active\n\n请先调用 operation=resume 激活该 schedule。`,
+              })
+            }
+            const outcome = await _scheduleEngine.runScheduleNow(String(args.id), 'manual')
+            if ('skipped' in outcome) {
+              return outputAdapter.convertToMCPFormat({
+                type: 'error',
+                content: `❌ run_now 跳过: ${outcome.reason}`,
+              })
+            }
+            emitSchedule(operation, args, {
+              runId: outcome.runId,
+              status: outcome.status,
+              durationMs: outcome.durationMs,
+            })
+            return outputAdapter.convertToMCPFormat({
+              type: 'success',
+              content: `⚡ schedule '${args.id}' 已执行\n\n${JSON.stringify(
+                { runId: outcome.runId, status: outcome.status, duration_ms: outcome.durationMs },
+                null,
+                2,
+              )}`,
+            })
+          }
+
           default:
             return outputAdapter.convertToMCPFormat({
               type: 'error',
@@ -409,12 +462,23 @@ ${JSON.stringify(created, null, 2)}
   ) => {
     _scheduleEventBus = bus
   }
+  // KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 4): setEngine 注入器（run_now 用）
+  ;(tool as ToolWithHandler & { setEngine: (engine: ScheduleEngine | null) => void }).setEngine = (
+    engine: ScheduleEngine | null,
+  ) => {
+    _scheduleEngine = engine
+  }
   return tool
 }
 
 /** 测试钩子 */
 export function _resetScheduleEventBus(): void {
   _scheduleEventBus = null
+}
+
+/** 测试钩子 — 重置 engine 引用（避免测试间状态污染） */
+export function _resetScheduleEngine(): void {
+  _scheduleEngine = null
 }
 
 export const scheduleTool: ToolWithHandler = createScheduleTool(true)

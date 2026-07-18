@@ -1,9 +1,9 @@
 /**
  * schedule.manifest.ts — 调度系统工具 manifest
- * KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 3)
+ * KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 3+4)
  *
- * 7 个 sub-ops（不含 run_now — 由 Commit 4 / ScheduleEngine 提供）：
- *   create / list / get / pause / resume / delete / history
+ * 8 个 sub-ops（Phase 1 完整）：
+ *   create / list / get / pause / resume / delete / history / run_now
  *
  * 与 enableV2 正交 — V1/V2 都能用（设计稿 §2.3）。
  */
@@ -20,6 +20,7 @@ export const manifest: ToolManifest = {
     'schedule:resume',
     'schedule:delete',
     'schedule:history',
+    'schedule:run_now',
   ],
   dependencies: ['@promptx/core', 'croner'],
   schemaVersion: 1,

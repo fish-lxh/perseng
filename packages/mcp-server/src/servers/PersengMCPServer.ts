@@ -12,6 +12,10 @@ import type { MCPServer } from '../interfaces/MCPServer.js';
 import type { ToolEventBus } from '../interfaces/MCPServer.js';
 import logger, { error as logError } from '@promptx/logger';
 import { toToolWithHandler, type MapToolRegistry } from '../registry/ToolRegistry.js';
+// KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 4): scheduler 引擎 + 工具注入
+import { ScheduleEngine } from '../scheduler/ScheduleEngine.js';
+import { getScheduleStore } from '../scheduler/instance.js';
+import { createScheduleTool } from '../tools/schedule.js';
 
 export interface PersengServerOptions {
   // 基础选项
@@ -42,6 +46,12 @@ export class PersengMCPServer {
    * 3.2 落地后切换到 registry.list().map(toToolWithHandler) 单路径注入。
    */
   private toolRegistry?: MapToolRegistry;
+  /**
+   * KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 4): 调度引擎 + EventBus 持有。
+   * start() 时 engine.start()；stop() 时 engine.stop()。
+   */
+  private _scheduleEngine?: ScheduleEngine;
+  private _eventBus: ToolEventBus | null = null;
 
   constructor(options: PersengServerOptions) {
     this.options = options;
@@ -92,12 +102,45 @@ export class PersengMCPServer {
       logger.debug(`Registered tool: ${tool.name}`);
     });
 
+    // KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 4): 构造 ScheduleEngine 并注入到 schedule tool。
+    // 注意 engine.start() 在 server.start() 里调（必须晚于工具注册完）。
+    this._initScheduleEngine(registry);
+
     logger.info(`Registered ${tools.length} Perseng tools (V2: ${enableV2})`);
+  }
+
+  /**
+   * KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 4): 构造 ScheduleEngine 并把它注入 schedule tool 的
+   * setEngine setter。store 走 ScheduleStore 单例（getScheduleStore）— 与 events 包同模式。
+   * 注册期同步完成（不需要 EventBus 已经就绪；engine 内部用 safeEmit 容错）。
+   */
+  private _initScheduleEngine(registry: MapToolRegistry): void {
+    try {
+      const store = getScheduleStore()
+      this._scheduleEngine = new ScheduleEngine({
+        store,
+        registry,
+        bus: this._eventBus,
+      })
+      // 把 engine 注入到 schedule tool
+      const scheduleTool = createScheduleTool(true)
+      ;(scheduleTool as unknown as { setEngine?: (e: ScheduleEngine) => void }).setEngine?.(
+        this._scheduleEngine,
+      )
+      logger.debug('[ScheduleEngine] initialized and injected into schedule tool')
+    } catch (err) {
+      logger.warn(
+        `[ScheduleEngine] init failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
   }
 
   /**
    * KNUTH-FEAT 2026-07-11 (M4): 动态加载 @promptx/events，构建一个 InProcessEventBus，
    * 并把它注入到所有支持 setEventBus 的工具上。
+   *
+   * KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 4): 同时把 bus 提升到 this._eventBus，
+   * 给 ScheduleEngine 用（事件平台单源）。
    *
    * 设计要点：
    * - 动态 import — 避免 @promptx/mcp-server 对 @promptx/events 的硬依赖（在测试/CI 里可独立编译）
@@ -113,6 +156,7 @@ export class PersengMCPServer {
         return
       }
       const bus = new events.InProcessEventBus(store) as unknown as ToolEventBus
+      this._eventBus = bus  // KNUTH-FEAT 2026-07-18 (Commit 4): hoist for ScheduleEngine
       let injected = 0
       for (const tool of tools) {
         if (typeof tool.setEventBus === 'function') {
@@ -133,12 +177,16 @@ export class PersengMCPServer {
    */
   async start(): Promise<void> {
     await this.server.start();
+    // KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 4): ScheduleEngine 启动 — 加载 active schedules
+    this._scheduleEngine?.start()
   }
-  
+
   /**
    * 停止服务器
    */
   async stop(): Promise<void> {
+    // KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 4): ScheduleEngine 关闭 — 停所有 croner jobs
+    this._scheduleEngine?.stop()
     await this.server.stop();
   }
   

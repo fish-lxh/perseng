@@ -37,6 +37,8 @@ function captureBus() {
 
 import * as scheduleModule from '../schedule.js'
 import { getScheduleStore, resetScheduleStore } from '../../scheduler/instance.js'
+import { ScheduleEngine } from '../../scheduler/ScheduleEngine.js'
+import { MapToolRegistry } from '../../registry/ToolRegistry.js'
 
 // ============================================================================
 // ScheduleStore 单例管理 — 每个测试用 tmp db
@@ -64,6 +66,31 @@ afterEach(async () => {
   }
 })
 
+/** 给 run_now 测试用的最小 registry：含 'remember' 工具，handler 返回 success */
+function makeEngineWithRegistry(): { engine: ScheduleEngine; stubHandler: ReturnType<typeof vi.fn> } {
+  const stubHandler = vi.fn(async () => ({
+    content: [{ type: 'text', text: 'tool success' }],
+  }))
+  const registry = new MapToolRegistry()
+  registry.register({
+    manifest: {
+      name: 'remember',
+      version: '1.0.0',
+      capabilities: ['memory:remember'],
+      dependencies: [],
+      schemaVersion: 1,
+      inputSchema: { type: 'object' },
+    },
+    handler: stubHandler as any,
+  })
+  const engine = new ScheduleEngine({
+    store: getScheduleStore(),
+    registry,
+    bus: null,
+  })
+  return { engine, stubHandler }
+}
+
 // ============================================================================
 // 基本元数据
 // ============================================================================
@@ -74,7 +101,7 @@ describe('schedule tool — 元数据 / 工厂', () => {
     expect(tool.name).toBe('schedule')
   })
 
-  it('I-SC-META-2: inputSchema.enum 列出 7 个 operation（不含 run_now）', () => {
+  it('I-SC-META-2: inputSchema.enum 列出 8 个 operation（含 run_now）', () => {
     const tool = scheduleModule.createScheduleTool(true)
     const opEnum = (tool.inputSchema as any).properties.operation.enum
     expect(opEnum).toEqual([
@@ -85,8 +112,8 @@ describe('schedule tool — 元数据 / 工厂', () => {
       'resume',
       'delete',
       'history',
+      'run_now',
     ])
-    expect(opEnum).not.toContain('run_now')
   })
 
   it('I-SC-META-3: inputSchema.required 只含 operation', () => {
@@ -460,5 +487,99 @@ describe('schedule tool — 默认 / 未知 operation', () => {
     const text = (result.content[0] as { text: string }).text
     // 不在 requiredByOp 里 → 走到 switch default
     expect(text).toMatch(/不支持的 operation/)
+  })
+})
+
+// ============================================================================
+// run_now (Phase 1 / Commit 4)
+// ============================================================================
+
+describe('schedule tool — run_now', () => {
+  it('I-SC-RN-1: 没注入 engine → 友好错误', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const result = await tool.handler({
+      operation: 'run_now',
+      id: 'whatever',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/ScheduleEngine 未注入/)
+  })
+
+  it('I-SC-RN-2: 注入 engine 但 id 不存在 → 错误', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    const result = await tool.handler({
+      operation: 'run_now',
+      id: 'no-such-id',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/不存在/)
+    engine.stop()
+  })
+
+  it('I-SC-RN-3: 非 active 状态 → 提示先 resume', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    await tool.handler({
+      operation: 'create',
+      id: 'rn-pending',
+      name: 'rn',
+      cronExpr: '0 9 * * 1-5',
+      toolName: 'remember',
+      toolArgs: {},
+    } as any)
+    const result = await tool.handler({ operation: 'run_now', id: 'rn-pending' } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/state=pending/)
+    expect(text).toMatch(/resume/)
+    engine.stop()
+  })
+
+  it('I-SC-RN-4: 注入 engine + active schedule → 同步执行成功并 emit schedule.run_now', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { bus, captured } = captureBus()
+    tool.setEventBus!(bus)
+    const { engine, stubHandler } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    await tool.handler({
+      operation: 'create',
+      id: 'rn-active',
+      name: 'rn',
+      cronExpr: '0 9 * * 1-5',
+      toolName: 'remember',
+      toolArgs: { content: 'hi' },
+    } as any)
+    await tool.handler({ operation: 'resume', id: 'rn-active' } as any) // pending → active
+    const result = await tool.handler({ operation: 'run_now', id: 'rn-active' } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/已执行/)
+    expect(text).toMatch(/"status": "success"/)
+    expect(stubHandler).toHaveBeenCalledOnce()
+    // run_now 工具 emit `schedule.run_now`（不是 schedule.triggered — 那是 engine 内部事件）
+    expect(captured.some((e) => e['type'] === 'schedule.run_now')).toBe(true)
+    engine.stop()
+  })
+
+  it('I-SC-RN-5: run_now 后 schedule_runs 表里多一行 success', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    await tool.handler({
+      operation: 'create',
+      id: 'rn-runs',
+      name: 'rn',
+      cronExpr: '0 9 * * 1-5',
+      toolName: 'remember',
+      toolArgs: {},
+    } as any)
+    await tool.handler({ operation: 'resume', id: 'rn-runs' } as any)
+    await tool.handler({ operation: 'run_now', id: 'rn-runs' } as any)
+    const hist = await tool.handler({ operation: 'history', id: 'rn-runs' } as any)
+    const text = (hist.content[0] as { text: string }).text
+    expect(text).toMatch(/"count": 1/)
+    expect(text).toMatch(/"status": "success"/)
+    engine.stop()
   })
 })
