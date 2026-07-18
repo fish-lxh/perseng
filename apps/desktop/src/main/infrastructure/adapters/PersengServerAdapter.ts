@@ -150,6 +150,29 @@ export class PersengServerAdapter implements IServerPort {
     return ResultUtil.ok(metrics)
   }
 
+  /**
+   * KNUTH-FEAT 2026-07-18 (Phase 2 / Commit 5): 直接调用 MCP server 的 schedule 工具 handler。
+   *
+   * 用途：settings-window 通过 IPC 调 list / create / get / pause / resume /
+   * delete / runNow / history 时走这条路径，绕开 JSON-RPC（更直接、零拷贝）。
+   *
+   * 依赖：MCP server 必须已 start()。
+   */
+  async invokeScheduleTool(args: Record<string, unknown>): Promise<unknown> {
+    if (!this.server?.getServer || !this.server.getServer().isRunning()) {
+      throw new Error('MCP server is not running')
+    }
+    const registry = this.server.getToolRegistry?.()
+    if (!registry) {
+      throw new Error('Tool registry not available')
+    }
+    const tool = registry.get('schedule')
+    if (!tool) {
+      throw new Error('schedule tool not registered')
+    }
+    return await tool.handler(args)
+  }
+
   async updateConfig(config: Partial<ServerConfig>): Promise<Result<void, ServerError>> {
     if (!this.server?.getServer || !this.server.getServer().isRunning()) {
       return ResultUtil.fail(ServerError.notRunning())

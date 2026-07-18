@@ -25,6 +25,7 @@ import { registerServerConfigIpc } from '~/main/ipc/serverConfigIpc'
 import { registerLanguageIpc } from '~/main/ipc/languageIpc'
 import { registerLogsIpc } from '~/main/ipc/logsIpc'
 import { registerTimelineIpc } from '~/main/ipc/timelineIpc'
+import { registerScheduleIpc } from '~/main/ipc/scheduleIpc'
 import { registerDatabaseManagerIpc } from '~/main/ipc/databaseManagerIpc'
 import { registerDialogIpc } from '~/main/ipc/dialogIpc'
 import { registerShellIpc } from '~/main/ipc/shellIpc'
@@ -111,6 +112,7 @@ class PersengDesktopApp {
     this.setupFeishuIPC()
     this.setupWorkspaceIPC()
     registerTimelineIpc()
+    registerScheduleIpc({ getServerPort: () => this.serverPort })
     registerDatabaseManagerIpc()
 
     // Setup infrastructure

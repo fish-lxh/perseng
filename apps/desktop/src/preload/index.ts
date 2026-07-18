@@ -175,6 +175,37 @@ interface ElectronAPI {
     }) => Promise<{ success: boolean; deleted: number; error?: string }>
     statistics: () => Promise<{ totalEvents: number; dbPath: string }>
   }
+  // KNUTH-FEAT 2026-07-18 (Phase 2): Schedule API
+  schedule: {
+    list: (filter?: { state?: string; toolName?: string; limit?: number }) => Promise<{
+      success: boolean
+      data: unknown
+      text: string
+      error?: string
+    }>
+    get: (id: string) => Promise<{ success: boolean; data: unknown; text: string; error?: string }>
+    create: (args: {
+      id?: string
+      name: string
+      description?: string
+      cronExpr: string
+      timezone?: string
+      toolName: string
+      toolArgs: Record<string, unknown>
+      maxRetries?: number
+      timeoutMs?: number
+      notifyOnSuccess?: boolean
+      notifyOnFailure?: boolean
+    }) => Promise<{ success: boolean; data: unknown; text: string; error?: string }>
+    pause: (id: string) => Promise<{ success: boolean; data: unknown; text: string; error?: string }>
+    resume: (id: string) => Promise<{ success: boolean; data: unknown; text: string; error?: string }>
+    delete: (id: string) => Promise<{ success: boolean; data: unknown; text: string; error?: string }>
+    history: (
+      id: string,
+      limit?: number,
+    ) => Promise<{ success: boolean; data: unknown; text: string; error?: string }>
+    runNow: (id: string) => Promise<{ success: boolean; data: unknown; text: string; error?: string }>
+  }
   // Database Manager API（轻量只读版）
   dbManager: {
     scan: () => Promise<{
@@ -360,6 +391,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     query: (filter) => ipcRenderer.invoke('timeline:query', filter),
     clear: (filter) => ipcRenderer.invoke('timeline:clear', filter),
     statistics: () => ipcRenderer.invoke('timeline:statistics'),
+  },
+  // KNUTH-FEAT 2026-07-18 (Phase 2): Schedule API（settings-window → MCP schedule tool）
+  schedule: {
+    list: (filter?: Record<string, unknown>) => ipcRenderer.invoke('schedule:list', filter ?? {}),
+    get: (id: string) => ipcRenderer.invoke('schedule:get', { id }),
+    create: (args: Record<string, unknown>) => ipcRenderer.invoke('schedule:create', args),
+    pause: (id: string) => ipcRenderer.invoke('schedule:pause', { id }),
+    resume: (id: string) => ipcRenderer.invoke('schedule:resume', { id }),
+    delete: (id: string) => ipcRenderer.invoke('schedule:delete', { id }),
+    history: (id: string, limit?: number) => ipcRenderer.invoke('schedule:history', { id, limit }),
+    runNow: (id: string) => ipcRenderer.invoke('schedule:runNow', { id }),
   },
   // Database Manager API（扫描 ~/.perseng/ 下所有 db/json）
   dbManager: {
