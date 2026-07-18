@@ -26,7 +26,9 @@ import { FeishuConfig } from "./components/FeishuConfig"
 import { PlatformIntegration } from "./components/PlatformIntegration"
 // import { WechatConfig } from "./components/WechatConfig"
 import { AgentXProfilesConfig } from "./components/AgentXProfilesConfig"
-import { Loader2, Settings, Bot, RefreshCw, Wifi, AlertTriangle, Plug } from "@/lib/crisp-icons"
+// KNUTH-FEAT 2026-07-18 (Phase 2 / Commit 6): Schedule 调度管理 tab
+import { SchedulesConfig } from "./components/SchedulesConfig"
+import { Loader2, Settings, Bot, RefreshCw, Wifi, AlertTriangle, Plug, Clock } from "@/lib/crisp-icons"
 
 function GitWarningBanner() {
   const { t } = useTranslation()
@@ -225,7 +227,7 @@ function SettingsWindow() {
       <Toaster />
       <div className="mx-auto max-w-4xl w-full flex-1 flex flex-col">
         <Tabs defaultValue="system" className="flex-1 flex flex-col">
-          <TabsList className="grid w-full grid-cols-4 mb-6">
+          <TabsList className="grid w-full grid-cols-5 mb-6">
             <TabsTrigger value="system" className="flex items-center gap-2">
               <Settings className="w-4 h-4" />
               {t("settings.tabs.system")}
@@ -241,6 +243,11 @@ function SettingsWindow() {
             <TabsTrigger value="platform" className="flex items-center gap-2">
               <Plug className="w-4 h-4" />
               {t("settings.tabs.platform")}
+            </TabsTrigger>
+            {/* KNUTH-FEAT 2026-07-18 (Phase 2 / Commit 6): Schedule tab */}
+            <TabsTrigger value="schedules" className="flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              调度
             </TabsTrigger>
           </TabsList>
 
@@ -395,6 +402,11 @@ function SettingsWindow() {
           {/* 接入其他平台 */}
           <TabsContent value="platform" className="flex-1 overflow-y-auto space-y-6">
             <PlatformIntegration />
+          </TabsContent>
+
+          {/* KNUTH-FEAT 2026-07-18 (Phase 2 / Commit 6): 调度管理 */}
+          <TabsContent value="schedules" className="flex-1 overflow-y-auto space-y-6">
+            <SchedulesConfig />
           </TabsContent>
         </Tabs>
       </div>
