@@ -32,7 +32,23 @@ async function clearAndCopyAvatar(
 }
 
 function assertSafeResourceId(id: string): void {
-  if (!/^[A-Za-z0-9._-]+$/.test(id)) {
+  // KNUTH-FIX 2026-07-19: 之前只允许 [A-Za-z0-9._-]，导致中文角色 ID（如「大盘策略师」）
+  // 在 uploadRoleAvatar / saveV2RoleFile 等 12 个 IPC 入口被直接 "Invalid resource ID" 拒绝。
+  // 文件系统层面 Windows NTFS 和 macOS/Linux 现代 fs 都支持 Unicode 文件名（实测 ~/.rolex/roles/总指挥/ 已存在），
+  // 这里只阻断路径遍历 + 控制字符，不再限制 Unicode。
+  if (typeof id !== 'string' || id.length === 0 || id.length > 255) {
+    throw new Error('Invalid resource ID')
+  }
+  // 阻断路径分隔符 + 控制字符 + 路径遍历片段
+  if (
+    id.includes('/') ||
+    id.includes('\\') ||
+    id.includes('\0') ||
+    id === '.' ||
+    id === '..' ||
+    /[\x00-\x1f]/.test(id) ||
+    /\.\./.test(id) // 不允许 ".." 串（即使在中间）
+  ) {
     throw new Error('Invalid resource ID')
   }
 }
