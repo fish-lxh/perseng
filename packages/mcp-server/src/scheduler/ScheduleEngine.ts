@@ -468,6 +468,14 @@ export class ScheduleEngine {
   }
 
   /**
+   * 返回 registry 里所有已注册 tool 的名称列表。
+   * 给自然语言解析器推断 toolName 用。
+   */
+  getRegisteredToolNames(): string[] {
+    return this.registry.list().map((r) => r.manifest.name)
+  }
+
+  /**
    * 扫一遍 DB，把所有到期且 active 的 schedule 各跑一次。
    * 主要给测试用（不依赖 croner 的 1 秒 tick）。
    */

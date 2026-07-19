@@ -103,7 +103,7 @@ describe('schedule tool — 元数据 / 工厂', () => {
     expect(tool.name).toBe('schedule')
   })
 
-  it('I-SC-META-2: inputSchema.enum 列出 10 个 operation（含 run_now / retry_now / dry_run）', () => {
+  it('I-SC-META-2: inputSchema.enum 列出 11 个 operation（含 parse_natural_language）', () => {
     const tool = scheduleModule.createScheduleTool(true)
     const opEnum = (tool.inputSchema as any).properties.operation.enum
     expect(opEnum).toEqual([
@@ -117,6 +117,7 @@ describe('schedule tool — 元数据 / 工厂', () => {
       'run_now',
       'retry_now',
       'dry_run',
+      'parse_natural_language',
     ])
   })
 
@@ -725,5 +726,112 @@ describe('schedule tool — dry_run', () => {
     const text = (result.content[0] as { text: string }).text
     expect(text).toMatch(/tool_not_registered/)
     engine.stop()
+  })
+})
+
+// ============================================================================
+// KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 8): parse_natural_language
+// ============================================================================
+
+describe('schedule tool — parse_natural_language', () => {
+  it('I-SC-NL-1: 缺 input → 必填错误', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    const result = await tool.handler({ operation: 'parse_natural_language' } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/缺少必填参数/)
+    expect(text).toMatch(/input/)
+    engine.stop()
+  })
+
+  it('I-SC-NL-2: 中文命中 → cronExpr 含正确时段 + emit schedule.parse_natural_language_succeeded', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { bus, captured } = captureBus()
+    tool.setEventBus!(bus)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    const result = await tool.handler({
+      operation: 'parse_natural_language',
+      input: '每个工作日早上 9 点',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/解析成功/)
+    expect(text).toMatch(/"cronExpr": "0 9 \* \* 1-5"/)
+    expect(text).toMatch(/"timezone": "Asia\/Shanghai"/)
+    expect(captured.some((e) => e['type'] === 'schedule.parse_natural_language_succeeded')).toBe(
+      true,
+    )
+    engine.stop()
+  })
+
+  it('I-SC-NL-3: 英文命中 → cronExpr 走标准格式', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    const result = await tool.handler({
+      operation: 'parse_natural_language',
+      input: 'weekdays at 3pm',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/解析成功/)
+    expect(text).toMatch(/"cronExpr": "0 15 \* \* 1-5"/)
+    engine.stop()
+  })
+
+  it('I-SC-NL-4: 未识别 → needsLLM=true + emit failed', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { bus, captured } = captureBus()
+    tool.setEventBus!(bus)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    const result = await tool.handler({
+      operation: 'parse_natural_language',
+      input: '在某个神秘时刻做某事',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/解析失败/)
+    expect(text).toMatch(/needsLLM=true/)
+    expect(captured.some((e) => e['type'] === 'schedule.parse_natural_language_failed')).toBe(true)
+    engine.stop()
+  })
+
+  it('I-SC-NL-5: knownTools 推断 toolName（registry 里能取到）', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    const result = await tool.handler({
+      operation: 'parse_natural_language',
+      input: '每天早上 9 点用 remember 工具',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/"toolName": "remember"/)
+    engine.stop()
+  })
+
+  it('I-SC-NL-6: locale=en 强制英文 → 中文输入解析失败', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    const result = await tool.handler({
+      operation: 'parse_natural_language',
+      input: '每个工作日早上 9 点',
+      locale: 'en',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/解析失败/)
+    engine.stop()
+  })
+
+  it('I-SC-NL-7: 没注入 engine → 仍能解析（不依赖 engine，仅 knownTools 推断）', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const result = await tool.handler({
+      operation: 'parse_natural_language',
+      input: '每天早上 9 点',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    // 没 engine 时 knownTools=undefined，但 cronExpr / timezone 仍能解析
+    expect(text).toMatch(/解析成功/)
+    expect(text).toMatch(/"cronExpr": "0 9 \* \* \*"/)
   })
 })

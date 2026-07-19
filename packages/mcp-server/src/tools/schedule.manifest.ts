@@ -4,6 +4,7 @@
  * KNUTH-FEAT 2026-07-18:
  *   Phase 1 / Commit 3+4 — 8 个 sub-ops
  *   Phase 3 / Commit 7 — +retry_now +dry_run（10 个）
+ *   Phase 3 / Commit 8 — +parse_natural_language（11 个）
  *
  * 与 enableV2 正交 — V1/V2 都能用（设计稿 §2.3）。
  */
@@ -24,6 +25,8 @@ export const manifest: ToolManifest = {
     // KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7)
     'schedule:retry_now',
     'schedule:dry_run',
+    // KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 8): 自然语言解析
+    'schedule:parse_natural_language',
   ],
   dependencies: ['@promptx/core', 'croner'],
   schemaVersion: 1,
