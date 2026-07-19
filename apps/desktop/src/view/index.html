@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Perseng Desktop</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <!-- KNUTH-FIX 2026-07-19: 移除 Google Fonts CDN link。
+       国内环境 fonts.googleapis.com 不通，打包后 fallback 到 system monospace 字体。
+       本地字体改用 @fontsource/* npm 包（main.tsx 引入），vite 自动 bundle woff2，
+       electron-builder node_modules/** glob 打进 asar。 -->
 </head>
 <body>
   <div id="root"></div>

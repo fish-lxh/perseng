@@ -4,8 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Perseng</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<!-- KNUTH-FIX 2026-07-19: 移除 Google Fonts CDN link。
+     web-ui 是 HTTP server 渲染的，单 HTML 文件不便做 vite bundle。
+     直接去掉 CDN 链接；现有 --font / --mono 都已声明 system fallback（PingFang SC / Microsoft YaHei / monospace），
+     字体降级到系统字体，code 块降级到 monospace。 -->
 <style>
 :root {
   --bg: #0a0a0a;
