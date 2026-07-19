@@ -53,6 +53,8 @@ beforeEach(() => {
   // 主动构造（不依赖 singleton）— schedule 工具 handler 调 getScheduleStore()
   getScheduleStore(dbPath)
   ;(scheduleModule as { _resetScheduleEventBus?: () => void })._resetScheduleEventBus?.()
+  // KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7): engine 注入也要 reset（避免 test 污染）
+  ;(scheduleModule as { _resetScheduleEngine?: () => void })._resetScheduleEngine?.()
 })
 
 afterEach(async () => {
@@ -101,7 +103,7 @@ describe('schedule tool — 元数据 / 工厂', () => {
     expect(tool.name).toBe('schedule')
   })
 
-  it('I-SC-META-2: inputSchema.enum 列出 8 个 operation（含 run_now）', () => {
+  it('I-SC-META-2: inputSchema.enum 列出 10 个 operation（含 run_now / retry_now / dry_run）', () => {
     const tool = scheduleModule.createScheduleTool(true)
     const opEnum = (tool.inputSchema as any).properties.operation.enum
     expect(opEnum).toEqual([
@@ -113,6 +115,8 @@ describe('schedule tool — 元数据 / 工厂', () => {
       'delete',
       'history',
       'run_now',
+      'retry_now',
+      'dry_run',
     ])
   })
 
@@ -580,6 +584,146 @@ describe('schedule tool — run_now', () => {
     const text = (hist.content[0] as { text: string }).text
     expect(text).toMatch(/"count": 1/)
     expect(text).toMatch(/"status": "success"/)
+    engine.stop()
+  })
+})
+
+// ============================================================================
+// KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7): retry_now
+// ============================================================================
+
+describe('schedule tool — retry_now', () => {
+  it('I-SC-RET-1: 没注入 engine → 友好错误', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const result = await tool.handler({ operation: 'retry_now', id: 'x' } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/ScheduleEngine 未注入/)
+  })
+
+  it('I-SC-RET-2: id 不存在 → 错误', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    const result = await tool.handler({ operation: 'retry_now', id: 'nope' } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/不存在/)
+    engine.stop()
+  })
+
+  it('I-SC-RET-3: 非 active 状态 → 错误', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    await tool.handler({
+      operation: 'create',
+      id: 'rnp',
+      name: 'rnp',
+      cronExpr: '0 9 * * 1-5',
+      toolName: 'remember',
+      toolArgs: {},
+    } as any)
+    const result = await tool.handler({ operation: 'retry_now', id: 'rnp' } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/state=pending/)
+    engine.stop()
+  })
+
+  it('I-SC-RET-4: 注入 engine + active schedule → 同步执行成功 + emit schedule.retry_now', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { bus, captured } = captureBus()
+    tool.setEventBus!(bus)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    await tool.handler({
+      operation: 'create',
+      id: 'ret-active',
+      name: 'r',
+      cronExpr: '0 9 * * 1-5',
+      toolName: 'remember',
+      toolArgs: {},
+    } as any)
+    await tool.handler({ operation: 'resume', id: 'ret-active' } as any)
+    const result = await tool.handler({ operation: 'retry_now', id: 'ret-active' } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/手动重试完成/)
+    expect(captured.some((e) => e['type'] === 'schedule.retry_now')).toBe(true)
+    engine.stop()
+  })
+})
+
+// ============================================================================
+// KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7): dry_run
+// ============================================================================
+
+describe('schedule tool — dry_run', () => {
+  it('I-SC-DR-1: 缺少 cronExpr → 必填错误', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    const result = await tool.handler({
+      operation: 'dry_run',
+      toolName: 'remember',
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/缺少必填参数/)
+    expect(text).toMatch(/cronExpr/)
+    engine.stop()
+  })
+
+  it('I-SC-DR-2: 校验通过 → emit schedule.dry_run_passed + 返回 preview', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { bus, captured } = captureBus()
+    tool.setEventBus!(bus)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    const result = await tool.handler({
+      operation: 'dry_run',
+      cronExpr: '0 9 * * 1-5',
+      timezone: 'Asia/Shanghai',
+      toolName: 'remember',
+      toolArgs: { content: 'hi' },
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/dry_run 通过/)
+    expect(text).toMatch(/"nextRun":\s*\d+/)
+    expect(captured.some((e) => e['type'] === 'schedule.dry_run_passed')).toBe(true)
+    engine.stop()
+  })
+
+  it('I-SC-DR-3: cron 非法 → emit schedule.dry_run_failed + reason=invalid_cron', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { bus, captured } = captureBus()
+    tool.setEventBus!(bus)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    const result = await tool.handler({
+      operation: 'dry_run',
+      cronExpr: 'not a cron',
+      timezone: 'Asia/Shanghai',
+      toolName: 'remember',
+      toolArgs: {},
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/invalid_cron/)
+    expect(captured.some((e) => e['type'] === 'schedule.dry_run_failed')).toBe(true)
+    const failedEvent = captured.find((e) => e['type'] === 'schedule.dry_run_failed')!
+    expect((failedEvent.payload as any).reason).toBe('invalid_cron')
+    engine.stop()
+  })
+
+  it('I-SC-DR-4: tool 不在 registry → reason=tool_not_registered', async () => {
+    const tool = scheduleModule.createScheduleTool(true)
+    const { engine } = makeEngineWithRegistry()
+    ;(tool as any).setEngine?.(engine)
+    const result = await tool.handler({
+      operation: 'dry_run',
+      cronExpr: '0 9 * * *',
+      timezone: 'Asia/Shanghai',
+      toolName: 'nonexistent_tool',
+      toolArgs: {},
+    } as any)
+    const text = (result.content[0] as { text: string }).text
+    expect(text).toMatch(/tool_not_registered/)
     engine.stop()
   })
 })

@@ -1,7 +1,9 @@
 /**
- * scheduler/__tests__/ScheduleEngine.test.ts (Phase 1 / Commit 4)
+ * scheduler/__tests__/ScheduleEngine.test.ts (Phase 1 / Commit 4 + Phase 3 / Commit 7)
  *
- * KNUTH-FEAT 2026-07-18 (Phase 1)
+ * KNUTH-FEAT 2026-07-18:
+ *   Phase 1 — 引擎基础
+ *   Phase 3 / Commit 7 — 重试机制 + dry_run validation
  *
  * 覆盖：
  *  - applyTemplate: ${now.date} / ${now.time} / ${now.weekday} / ${schedule.id} /
@@ -14,6 +16,12 @@
  *  - 1 秒级 cron：start() → 等 2.5s → 至少 1 条 runs（success）
  *  - stop()：停 croner 后不再触发
  *  - upsertJob / removeJob：管理 API（用于工具层 create/resume/pause/delete）
+ *  - Phase 3:
+ *    - 重试：失败 N 次后成功 → emit retried + schedule_runs 完整记录
+ *    - 重试：全部失败 → fail_count +=1 + L2 pause + emit failed
+ *    - backoff 时间戳正确性
+ *    - dry_run: 校验通过 / 失败（invalid cron / tool not found / invalid timezone）
+ *    - retry_now / manual_retry 触发器
  *
  * 每个测试 new 一个 ScheduleEngine（DI 模式，避免 Vitest timer leak）。
  */
@@ -479,5 +487,219 @@ describe('事件 emit — producer=scheduler:engine', () => {
     const result = await noBusEngine.runScheduleNow('no-bus')
     expect('skipped' in result).toBe(false)
     noBusEngine.stop()
+  })
+})
+
+// ============================================================================
+// KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7): 重试机制
+// ============================================================================
+
+describe('重试机制 — maxRetries + backoff', () => {
+  it('attempt 1 失败 → attempt 2 成功 → 写 2 条 schedule_runs + emit schedule.retried + schedule.succeeded', async () => {
+    makeSchedule({ id: 'retry-then-ok', maxRetries: 2 })
+    store.setState('retry-then-ok', 'active')
+
+    // 第一次失败，第二次成功
+    let call = 0
+    stubHandler.mockImplementation(async () => {
+      call++
+      if (call === 1) throw new Error('first attempt fails')
+      return { content: [{ type: 'text', text: 'ok' }] }
+    })
+
+    const result = await engine.runScheduleNow('retry-then-ok')
+    expect('skipped' in result).toBe(false)
+    if ('skipped' in result) return
+    expect(result.status).toBe('success')
+
+    // schedule_runs 应有 2 条
+    const runs = store.listRuns({ scheduleId: 'retry-then-ok' })
+    expect(runs).toHaveLength(2)
+    expect(runs[0]!.attempt).toBe(2)
+    expect(runs[0]!.status).toBe('success')
+    expect(runs[1]!.attempt).toBe(1)
+    expect(runs[1]!.status).toBe('failed')
+    expect(runs[1]!.error).toContain('first attempt fails')
+
+    // 事件：retried + succeeded
+    const retried = captured.find((e) => e['type'] === 'schedule.retried')
+    const succeeded = captured.find((e) => e['type'] === 'schedule.succeeded')
+    expect(retried).toBeDefined()
+    expect(succeeded).toBeDefined()
+    const retriedPayload = retried!['payload'] as Record<string, unknown>
+    expect(retriedPayload['attempt']).toBe(1)
+    expect(typeof retriedPayload['next_attempt_at']).toBe('number')
+    expect(retriedPayload['backoff_seconds']).toBe(30) // backoff[0] = 30s
+
+    // fail_count 应为 0（最终成功）
+    const sched = store.get('retry-then-ok')
+    expect(sched?.failCount).toBe(0)
+  })
+
+  it('全部失败 → fail_count +=1（单次 runScheduleNow）+ emit schedule.failed', async () => {
+    makeSchedule({ id: 'retry-all-fail', maxRetries: 2 })
+    store.setState('retry-all-fail', 'active')
+    stubHandler.mockRejectedValue(new Error('always fail'))
+
+    const result = await engine.runScheduleNow('retry-all-fail')
+    expect('skipped' in result).toBe(false)
+    if ('skipped' in result) return
+    expect(result.status).toBe('failed')
+
+    // 3 条 schedule_runs（maxAttempts = 3）
+    const runs = store.listRuns({ scheduleId: 'retry-all-fail' })
+    expect(runs).toHaveLength(3)
+
+    // 事件：triggered × 3 + retried × 2 + failed × 1
+    const triggeredEvents = captured.filter((e) => e['type'] === 'schedule.triggered')
+    const retriedEvents = captured.filter((e) => e['type'] === 'schedule.retried')
+    const failedEvents = captured.filter((e) => e['type'] === 'schedule.failed')
+    expect(triggeredEvents).toHaveLength(3)
+    expect(retriedEvents).toHaveLength(2)
+    expect(failedEvents).toHaveLength(1)
+
+    // fail_count 按 run-level 计数（一次 runScheduleNow 全失败 → +1）
+    const sched = store.get('retry-all-fail')
+    expect(sched?.failCount).toBe(1)
+    expect(sched?.state).toBe('active') // L2 还没到 3
+  })
+
+  it('连续 3 次 runScheduleNow 全失败 → 触发 L2 pause（fail_count=3）', async () => {
+    makeSchedule({ id: 'l2-trigger', maxRetries: 0 })
+    store.setState('l2-trigger', 'active')
+    stubHandler.mockRejectedValue(new Error('always fail'))
+
+    for (let i = 0; i < L2_AUTO_PAUSE_FAIL_COUNT; i++) {
+      // 需要重置 nextRunAt 让 engine 能 claim
+      const next = new Date(Date.now() + 60_000).getTime()
+      ;(store as any).db.prepare(
+        'UPDATE schedules SET next_run_at = ? WHERE id = ?',
+      ).run(next, 'l2-trigger')
+      await engine.runScheduleNow('l2-trigger')
+    }
+
+    const sched = store.get('l2-trigger')
+    expect(sched?.state).toBe('paused')
+    expect(sched?.failCount).toBe(L2_AUTO_PAUSE_FAIL_COUNT)
+
+    const pausedEvents = captured.filter((e) => e['type'] === 'schedule.paused')
+    expect(pausedEvents.length).toBeGreaterThan(0)
+  })
+
+  it('backoff 时间戳符合 [30s, 120s, 480s] 默认', async () => {
+    makeSchedule({ id: 'backoff-check', maxRetries: 3 })
+    store.setState('backoff-check', 'active')
+    stubHandler.mockRejectedValue(new Error('fail'))
+
+    await engine.runScheduleNow('backoff-check')
+    const retriedEvents = captured.filter((e) => e['type'] === 'schedule.retried')
+    expect(retriedEvents).toHaveLength(3)
+    expect((retriedEvents[0]!.payload as any).backoff_seconds).toBe(30)
+    expect((retriedEvents[1]!.payload as any).backoff_seconds).toBe(120)
+    expect((retriedEvents[2]!.payload as any).backoff_seconds).toBe(480)
+  })
+
+  it('maxRetries=0 → 不重试（maxAttempts=1）', async () => {
+    makeSchedule({ id: 'no-retry', maxRetries: 0 })
+    store.setState('no-retry', 'active')
+    stubHandler.mockRejectedValue(new Error('fail'))
+
+    const result = await engine.runScheduleNow('no-retry')
+    expect('skipped' in result).toBe(false)
+    if ('skipped' in result) return
+    expect(result.status).toBe('failed')
+
+    const runs = store.listRuns({ scheduleId: 'no-retry' })
+    expect(runs).toHaveLength(1)
+    const retried = captured.filter((e) => e['type'] === 'schedule.retried')
+    expect(retried).toHaveLength(0)
+  })
+
+  it('maxRetries 超过上限（>10）→ 自动夹到 10', async () => {
+    const s = makeSchedule({ id: 'cap-test', maxRetries: 999 })
+    const policy = store.getRetryPolicy(s)
+    expect(policy.maxAttempts).toBe(11) // MAX_RETRY_LIMIT=10 + 1
+    expect(policy.backoffSeconds).toHaveLength(10)
+  })
+
+  it('triggeredBy=manual_retry 区分于 manual', async () => {
+    makeSchedule({ id: 'retry-triggered', maxRetries: 0 })
+    store.setState('retry-triggered', 'active')
+    await engine.runScheduleNow('retry-triggered', 'manual_retry')
+    const triggered = captured.find((e) => e['type'] === 'schedule.triggered')!
+    expect((triggered.payload as any).triggered_by).toBe('manual_retry')
+  })
+})
+
+// ============================================================================
+// KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7): dry_run validation
+// ============================================================================
+
+describe('validateScheduleConfig — dry_run', () => {
+  it('校验通过 → ok=true + preview.nextRun', () => {
+    const result = engine.validateScheduleConfig({
+      cronExpr: '0 9 * * 1-5',
+      timezone: 'Asia/Shanghai',
+      toolName: 'remember',
+      toolArgs: { content: 'hi' },
+    })
+    expect(result.ok).toBe(true)
+    expect(result.preview?.cronExpr).toBe('0 9 * * 1-5')
+    expect(typeof result.preview?.nextRun).toBe('number')
+  })
+
+  it('cron 非法 → ok=false + reason=invalid_cron', () => {
+    const result = engine.validateScheduleConfig({
+      cronExpr: 'this is not cron',
+      timezone: 'Asia/Shanghai',
+      toolName: 'remember',
+      toolArgs: {},
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe('invalid_cron')
+    expect(result.detail).toBeDefined()
+  })
+
+  it('timezone 非法 → ok=false + reason=invalid_timezone', () => {
+    const result = engine.validateScheduleConfig({
+      cronExpr: '0 9 * * *',
+      timezone: 'Mars/Olympus_Mons',
+      toolName: 'remember',
+      toolArgs: {},
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe('invalid_timezone')
+  })
+
+  it('tool 不在 registry → ok=false + reason=tool_not_registered', () => {
+    const result = engine.validateScheduleConfig({
+      cronExpr: '0 9 * * *',
+      timezone: 'Asia/Shanghai',
+      toolName: 'nonexistent_tool',
+      toolArgs: {},
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe('tool_not_registered')
+    expect(result.detail).toContain('nonexistent_tool')
+  })
+
+  it('toolArgs 是数组 → ok=false + reason=invalid_toolArgs', () => {
+    const result = engine.validateScheduleConfig({
+      cronExpr: '0 9 * * *',
+      timezone: 'Asia/Shanghai',
+      toolName: 'remember',
+      toolArgs: ['not', 'an', 'object'],
+    })
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe('invalid_toolArgs')
+  })
+
+  it('toolArgs 缺失 → ok=true（可选字段）', () => {
+    const result = engine.validateScheduleConfig({
+      cronExpr: '0 9 * * *',
+      timezone: 'Asia/Shanghai',
+      toolName: 'remember',
+    })
+    expect(result.ok).toBe(true)
   })
 })

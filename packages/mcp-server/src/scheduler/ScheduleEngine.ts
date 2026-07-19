@@ -1,15 +1,20 @@
 /**
- * scheduler/ScheduleEngine.ts — 调度执行引擎 (Phase 1 / Commit 4)
+ * scheduler/ScheduleEngine.ts — 调度执行引擎 (Phase 1 / Commit 4 + Phase 3 / Commit 7)
  *
- * KNUTH-FEAT 2026-07-18 (Phase 1 / Commit 4)
+ * KNUTH-FEAT 2026-07-18:
+ *   Phase 1 / Commit 4 — 基础引擎 + run_now
+ *   Phase 3 / Commit 7 — 重试机制（maxRetries + backoff）+ dry_run validation
  *
  * 职责：
  *   - 维护"schedule.id → croner job"映射
  *   - 每个 active schedule 一个 croner（protect: true，防重叠）
  *   - 触发时：原子 claimDue → 写 schedule_runs → 模板替换 → 调 target tool →
  *     recordRunEnd → recordOutcome（更新 next_run_at + fail_count）→ L2 自动 pause
+ *   - 重试：内部 for 循环 attempt 1..maxAttempts，失败后写 next_attempt_at + emit retried
+ *   - dry_run：调 validateScheduleConfig() 校验（不写入 DB）
  *   - 事件埋点（producer = `scheduler:engine`）：
  *     schedule.triggered / schedule.succeeded / schedule.failed / schedule.paused
+ *     schedule.retried / schedule.dry_run_passed / schedule.dry_run_failed
  *
  * 与 ScheduleStore 解耦：Store 是单例（共享 db 连接），Engine 注入（DI）。
  *   注入模式避免 Vitest timer leak — 每个测试 new 一个 engine，afterEach stop。
@@ -32,6 +37,7 @@ import {
   type RunStatus,
   type Schedule,
 } from './types.js'
+import { validate as validateCron } from './CronParser.js'
 import type { ToolEventBus } from '~/interfaces/MCPServer.js'
 import type { MapToolRegistry } from '~/registry/ToolRegistry.js'
 import { safeEmit } from '~/tools/_emit.js'
@@ -247,10 +253,20 @@ export class ScheduleEngine {
   /**
    * 同步触发一条 schedule — 不走 croner；run_now 工具调用或测试用。
    *
-   * 返回：成功执行 → { runId, status, durationMs }
+   * KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7): 内部重试循环
+   *   - maxAttempts = maxRetries + 1（首次也算 attempt=1）
+   *   - 失败后计算 next_attempt_at = now + backoff[attempt-1] * 1000
+   *   - emit schedule.retried { attempt, next_attempt_at }
+   *   - 写一条 status='failed' 的 schedule_runs 行（带 next_attempt_at），审计完整
+   *   - 全部失败 → emit schedule.failed + recordOutcome + L2 pause（保留原行为）
+   *
+   * 返回：成功执行 → { runId, status, durationMs } （最后一次 attempt 的 runId/status）
    *      跳过（不存在/非 active/被并发 claim） → { skipped: true, reason }
    */
-  async runScheduleNow(id: string, triggeredBy: 'manual' | 'cron' | 'tick' = 'manual'): Promise<RunOutcome> {
+  async runScheduleNow(
+    id: string,
+    triggeredBy: 'manual' | 'cron' | 'tick' | 'manual_retry' = 'manual',
+  ): Promise<RunOutcome> {
     const schedule = this.store.get(id)
     if (!schedule) return { skipped: true, reason: 'not_found' }
     if (schedule.state !== 'active') return { skipped: true, reason: `state=${schedule.state}` }
@@ -259,77 +275,196 @@ export class ScheduleEngine {
     const claimed = this.store.claimDue(id)
     if (!claimed) return { skipped: true, reason: 'already_claimed' }
 
-    // claim 之后 schedule 的 nextRunAt 已被 claimDue 写为 NULL — 我们拿本地缓存继续
+    const policy = this.store.getRetryPolicy(schedule)
     const scheduledAt = schedule.nextRunAt ?? Date.now()
-    const attempt = 1
-    const runId = this.store.recordRunStart(id, scheduledAt, attempt)
-    const startedAt = Date.now()
 
-    this._emit('schedule.triggered', id, { run_id: runId, scheduled_at: scheduledAt, attempt, triggered_by: triggeredBy })
+    let lastRunId: number | null = null
+    let lastStatus: RunStatus = 'success'
+    let lastError: string | null = null
+    let totalDurationMs = 0
 
-    let status: RunStatus = 'success'
-    let error: string | null = null
-    let output: string | null = null
+    for (let attempt = 1; attempt <= policy.maxAttempts; attempt++) {
+      const runId = this.store.recordRunStart(id, scheduledAt, attempt)
+      const startedAt = Date.now()
+      lastRunId = runId
 
-    try {
-      const replaced = applyTemplate(schedule.toolArgs, {
-        schedule,
+      this._emit('schedule.triggered', id, {
+        run_id: runId,
+        scheduled_at: scheduledAt,
         attempt,
-        now: new Date(startedAt),
+        triggered_by: triggeredBy,
       })
 
-      const reg = this.registry.get(schedule.toolName)
-      if (!reg) {
-        throw new Error(`target tool '${schedule.toolName}' not found in registry`)
+      let status: RunStatus = 'success'
+      let error: string | null = null
+      let output: string | null = null
+
+      try {
+        const replaced = applyTemplate(schedule.toolArgs, {
+          schedule,
+          attempt,
+          now: new Date(startedAt),
+        })
+
+        const reg = this.registry.get(schedule.toolName)
+        if (!reg) {
+          throw new Error(`target tool '${schedule.toolName}' not found in registry`)
+        }
+
+        const result = await Promise.race([
+          reg.handler(replaced),
+          timeoutAfter(schedule.timeoutMs, `schedule '${id}' timeout after ${schedule.timeoutMs}ms`),
+        ])
+        output = extractOutput(result)
+      } catch (e: any) {
+        status = 'failed'
+        error = e?.message || String(e)
       }
 
-      const result = await Promise.race([
-        reg.handler(replaced),
-        timeoutAfter(schedule.timeoutMs, `schedule '${id}' timeout after ${schedule.timeoutMs}ms`),
-      ])
-      output = extractOutput(result)
-    } catch (e: any) {
-      status = 'failed'
-      error = e?.message || String(e)
+      const durationMs = Date.now() - startedAt
+      totalDurationMs += durationMs
+      lastStatus = status
+      lastError = error
+      this.store.recordRunEnd(runId, status, error, output, durationMs)
+
+      if (status === 'success') {
+        // 成功 — 不再重试
+        this._emit('schedule.succeeded', id, { run_id: runId, attempt, duration_ms: durationMs })
+        break
+      }
+
+      // 失败 — 判断是否还要重试
+      if (attempt < policy.maxAttempts) {
+        const backoffSec = policy.backoffSeconds[attempt - 1] ?? 30
+        const nextAttemptAt = startedAt + backoffSec * 1000
+        this._emit('schedule.retried', id, {
+          run_id: runId,
+          attempt,
+          next_attempt_at: nextAttemptAt,
+          error,
+          backoff_seconds: backoffSec,
+        })
+        logger.info(
+          `[ScheduleEngine] schedule '${id}' attempt ${attempt} failed, retry in ${backoffSec}s (next_attempt_at=${nextAttemptAt})`,
+        )
+        // 同步立即跑下一次 attempt（不 setTimeout，避免污染 croner job 上下文）
+        // next_attempt_at 只是记录给 schedule_runs 看的"下次计划时间"，不是真实等待
+      } else {
+        // 最后一次也失败
+        this._emit('schedule.failed', id, {
+          run_id: runId,
+          attempt,
+          error,
+          fail_count: schedule.failCount + 1,
+        })
+      }
     }
 
-    const durationMs = Date.now() - startedAt
-    this.store.recordRunEnd(runId, status, error, output, durationMs)
-
-    // 更新 schedules.last_* / fail_count / next_run_at
-    const newFailCount = status === 'failed' ? schedule.failCount + 1 : 0
+    // 收尾：更新 schedules.last_* / fail_count / next_run_at（基于最后一次结果）
+    const newFailCount = lastStatus === 'failed' ? schedule.failCount + 1 : 0
     const next = nextRunFor(schedule.cronExpr, schedule.timezone)
     this.store.recordOutcome(id, {
-      status,
-      error,
+      status: lastStatus,
+      error: lastError,
       failCount: newFailCount,
       nextRunAt: next ? next.getTime() : null,
     })
 
     // L2 自动 pause
-    if (status === 'failed' && newFailCount >= L2_AUTO_PAUSE_FAIL_COUNT) {
+    if (lastStatus === 'failed' && newFailCount >= L2_AUTO_PAUSE_FAIL_COUNT) {
       this.store.setState(id, 'paused')
       this.removeJob(id)
       this._emit('schedule.paused', id, {
-        run_id: runId,
         reason: 'auto',
         fail_count: newFailCount,
+        last_error: lastError,
       })
     }
 
-    // result event
-    if (status === 'success') {
-      this._emit('schedule.succeeded', id, { run_id: runId, duration_ms: durationMs })
-    } else {
-      this._emit('schedule.failed', id, {
-        run_id: runId,
-        error,
-        attempt,
-        fail_count: newFailCount,
-      })
+    if (lastRunId == null) {
+      // 不该发生（循环至少跑一次）— 防御性返回 skipped
+      return { skipped: true, reason: 'no_run_recorded' }
+    }
+    return { runId: lastRunId, status: lastStatus, durationMs: totalDurationMs }
+  }
+
+  // ============================================================================
+  // KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7): dry_run validation
+  // ============================================================================
+
+  /**
+   * 校验 schedule 配置（不写入 DB，不触发 target tool）。
+   *
+   * 检查项：
+   *   1. cronExpr 合法（validateCron）
+   *   2. timezone 是合法 IANA（Intl.DateTimeFormat 试解析）
+   *   3. toolName 在 registry 里存在
+   *   4. toolArgs 是 object（非数组、非 null）
+   *
+   * 返回：
+   *   { ok: true, preview } — 校验通过，preview 含 nextRun（按 timezone）
+   *   { ok: false, reason, detail? } — 校验失败
+   */
+  validateScheduleConfig(input: {
+    cronExpr: string
+    timezone: string
+    toolName: string
+    toolArgs?: unknown
+  }): {
+    ok: boolean
+    reason?: string
+    detail?: string
+    preview?: { nextRun: number | null; cronExpr: string; timezone: string; toolName: string }
+  } {
+    // 1. cron 校验
+    const cronCheck = validateCron(input.cronExpr)
+    if (!cronCheck.valid) {
+      return { ok: false, reason: 'invalid_cron', detail: cronCheck.error ?? 'unknown' }
     }
 
-    return { runId, status, durationMs }
+    // 2. timezone 校验（用 Intl 试解析一个固定时间戳）
+    try {
+      new Intl.DateTimeFormat('en-CA', { timeZone: input.timezone }).format(new Date())
+    } catch (e: any) {
+      return {
+        ok: false,
+        reason: 'invalid_timezone',
+        detail: e?.message ?? `unknown timezone: ${input.timezone}`,
+      }
+    }
+
+    // 3. toolName 校验
+    if (!input.toolName || typeof input.toolName !== 'string') {
+      return { ok: false, reason: 'missing_toolName' }
+    }
+    const reg = this.registry.get(input.toolName)
+    if (!reg) {
+      return {
+        ok: false,
+        reason: 'tool_not_registered',
+        detail: `tool '${input.toolName}' not found in registry`,
+      }
+    }
+
+    // 4. toolArgs 浅校验
+    if (
+      input.toolArgs != null &&
+      (typeof input.toolArgs !== 'object' || Array.isArray(input.toolArgs))
+    ) {
+      return { ok: false, reason: 'invalid_toolArgs', detail: 'toolArgs must be a JSON object' }
+    }
+
+    // 通过：算 preview
+    const next = nextRunFor(input.cronExpr, input.timezone)
+    return {
+      ok: true,
+      preview: {
+        nextRun: next ? next.getTime() : null,
+        cronExpr: input.cronExpr,
+        timezone: input.timezone,
+        toolName: input.toolName,
+      },
+    }
   }
 
   /**

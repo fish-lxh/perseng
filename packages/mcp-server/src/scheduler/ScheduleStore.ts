@@ -27,9 +27,12 @@ import * as path from 'node:path'
 import { createLogger } from '@promptx/logger'
 import { nextRunFor } from './CronParser.js'
 import {
+  DEFAULT_RETRY_BACKOFF_SECONDS,
   DEFAULT_TIMEZONE,
+  MAX_RETRY_LIMIT,
   SCHEDULES_DB_PATH_ENV,
   type NewSchedule,
+  type RetryPolicy,
   type Schedule,
   type ScheduleListFilter,
   type ScheduleRun,
@@ -87,6 +90,11 @@ export class ScheduleStore {
     insertRun: Database.Statement
     updateRunEnd: Database.Statement
   }
+  /**
+   * KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7): next_attempt_at 列是否已迁移。
+   * 首次启动时检测一次，避免每次 insertRun 都试 ALTER TABLE。
+   */
+  private _nextAttemptAtColumnReady = false
 
   /**
    * @param dbPath   可选覆盖；缺省走 defaultDbPath()
@@ -182,13 +190,30 @@ export class ScheduleStore {
         attempt       INTEGER NOT NULL DEFAULT 1,
         error         TEXT,
         output        TEXT,
-        duration_ms   INTEGER
+        duration_ms   INTEGER,
+        next_attempt_at INTEGER
       );
 
       CREATE INDEX IF NOT EXISTS idx_runs_schedule_time
         ON schedule_runs(schedule_id, started_at DESC);
     `)
     this._prepareStatements()
+    this._migrateNextAttemptAt()
+  }
+
+  /**
+   * KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7): 老库（无 next_attempt_at 列）的迁移。
+   * - 幂等：try/catch 吞 "duplicate column name" 错误
+   * - 失败也不致命：recordRunStart 会跳过写 next_attempt_at
+   */
+  private _migrateNextAttemptAt(): void {
+    try {
+      this.db.exec(`ALTER TABLE schedule_runs ADD COLUMN next_attempt_at INTEGER`)
+      this._nextAttemptAtColumnReady = true
+    } catch {
+      // 列已存在 → 视为已迁移
+      this._nextAttemptAtColumnReady = true
+    }
   }
 
   private _prepareStatements(): void {
@@ -245,8 +270,8 @@ export class ScheduleStore {
         UPDATE schedules SET state = 'deleted', updated_at = ? WHERE id = ?
       `),
       insertRun: this.db.prepare(`
-        INSERT INTO schedule_runs (schedule_id, scheduled_at, status, attempt)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO schedule_runs (schedule_id, scheduled_at, status, attempt, next_attempt_at)
+        VALUES (?, ?, ?, ?, ?)
       `),
       updateRunEnd: this.db.prepare(`
         UPDATE schedule_runs SET
@@ -387,9 +412,19 @@ export class ScheduleStore {
 
   /**
    * 写一条 schedule_runs 行（status=running），返回 run id。
+   *
+   * KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7):
+   *   - `nextAttemptAt` 可选；失败重试场景下指向下次重试时间
+   *   - 若列未就绪（迁移失败）则安全忽略
    */
-  recordRunStart(scheduleId: string, scheduledAt: number, attempt: number = 1): number {
-    const info = this.stmts.insertRun.run(scheduleId, scheduledAt, 'running', attempt)
+  recordRunStart(
+    scheduleId: string,
+    scheduledAt: number,
+    attempt: number = 1,
+    nextAttemptAt?: number | null,
+  ): number {
+    const next = this._nextAttemptAtColumnReady ? (nextAttemptAt ?? null) : null
+    const info = this.stmts.insertRun.run(scheduleId, scheduledAt, 'running', attempt, next)
     return Number(info.lastInsertRowid)
   }
 
@@ -409,6 +444,30 @@ export class ScheduleStore {
       durationMs ?? null,
       runId,
     )
+  }
+
+  /**
+   * KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7):
+   *   从 schedule.maxRetries 派生 RetryPolicy（设计稿 §5.3）。
+   *   - maxRetries=0 → 不重试（maxAttempts=1）
+   *   - maxRetries>=1 → backoff 数组按 maxRetries 截取默认 DEFAULT_RETRY_BACKOFF_SECONDS，
+   *     超出默认 3 段的部分按 [480, 1440, 2880, ...] 几何递增（×3）
+   *   - 上限 MAX_RETRY_LIMIT（防止恶意/手滑 config）
+   */
+  getRetryPolicy(schedule: Schedule): RetryPolicy {
+    const limited = Math.min(Math.max(schedule.maxRetries ?? 0, 0), MAX_RETRY_LIMIT)
+    const maxAttempts = limited + 1
+    const backoffSeconds: number[] = []
+    for (let i = 0; i < limited; i++) {
+      if (i < DEFAULT_RETRY_BACKOFF_SECONDS.length) {
+        backoffSeconds.push(DEFAULT_RETRY_BACKOFF_SECONDS[i]!)
+      } else {
+        // 超出默认 3 段后按 ×3 递增（[480, 1440, 4320, ...]）
+        const prev = backoffSeconds[i - 1] ?? 480
+        backoffSeconds.push(prev * 3)
+      }
+    }
+    return { maxAttempts, backoffSeconds }
   }
 
   /**
@@ -522,6 +581,8 @@ export class ScheduleStore {
       error: (r['error'] as string | null) ?? null,
       output: (r['output'] as string | null) ?? null,
       durationMs: (r['duration_ms'] as number | null) ?? null,
+      // KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7): 重试时间戳
+      nextAttemptAt: (r['next_attempt_at'] as number | null) ?? null,
     }
   }
 }

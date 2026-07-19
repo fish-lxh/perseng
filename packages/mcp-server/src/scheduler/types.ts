@@ -23,6 +23,20 @@ export const L2_AUTO_PAUSE_FAIL_COUNT = 3
 /** 单次执行的默认超时（毫秒） */
 export const DEFAULT_TIMEOUT_MS = 60_000
 
+// KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7): 重试回退策略（设计稿 §5.3）
+/** 默认重试 backoff（秒）：30s → 2min → 8min */
+export const DEFAULT_RETRY_BACKOFF_SECONDS = [30, 120, 480] as const
+/** 重试最大次数上限（防止恶意 config） */
+export const MAX_RETRY_LIMIT = 10
+
+/** 重试策略（从 schedule.maxRetries 派生） */
+export interface RetryPolicy {
+  /** 总尝试次数（含首次）：maxRetries + 1；maxRetries=0 → maxAttempts=1（不重试） */
+  maxAttempts: number
+  /** 各次重试之间的延迟（秒）；下标 0 = 第 1 次重试前等待 */
+  backoffSeconds: number[]
+}
+
 // ============================================================================
 // 状态机
 // ============================================================================
@@ -94,6 +108,8 @@ export interface ScheduleRun {
   error: string | null
   output: string | null
   durationMs: number | null
+  /** KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 7): 下次重试时间戳（失败时）；null = 无下次 */
+  nextAttemptAt: number | null
 }
 
 // ============================================================================
