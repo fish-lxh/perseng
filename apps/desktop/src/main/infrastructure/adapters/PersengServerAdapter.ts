@@ -173,6 +173,15 @@ export class PersengServerAdapter implements IServerPort {
     return await tool.handler(args)
   }
 
+  /**
+   * KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 9): 暴露 MCP EventBus。
+   * 给 desktop 主进程订阅 schedule.* 事件并 IPC 推送给 settings-window。
+   */
+  getEventBus(): unknown {
+    if (!this.server?.getEventBus) return null
+    return this.server.getEventBus()
+  }
+
   async updateConfig(config: Partial<ServerConfig>): Promise<Result<void, ServerError>> {
     if (!this.server?.getServer || !this.server.getServer().isRunning()) {
       return ResultUtil.fail(ServerError.notRunning())

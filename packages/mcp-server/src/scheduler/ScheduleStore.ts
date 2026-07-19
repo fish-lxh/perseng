@@ -31,6 +31,7 @@ import {
   DEFAULT_TIMEZONE,
   MAX_RETRY_LIMIT,
   SCHEDULES_DB_PATH_ENV,
+  type FailurePattern,
   type NewSchedule,
   type RetryPolicy,
   type Schedule,
@@ -514,6 +515,103 @@ export class ScheduleStore {
       `ORDER BY started_at DESC, id DESC LIMIT ?`
     const rows = this.db.prepare(sql).all(...params, limit) as Array<Record<string, unknown>>
     return rows.map((r) => this._mapRunRow(r))
+  }
+
+  // ============================================================================
+  // KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 9): 失败模式识别
+  // ============================================================================
+
+  /** 错误指纹 — 取 error 前 80 字符 normalize（去多余空白 + lowercase） */
+  private _errorFingerprint(error: string | null): string | null {
+    if (!error) return null
+    return error.slice(0, 80).replace(/\s+/g, ' ').trim().toLowerCase()
+  }
+
+  /**
+   * 分析一条 schedule 的最近 runs，识别失败模式。
+   *
+   * 算法：
+   *  1. 取最近 N 条 runs（按 startedAt DESC），从最新往旧扫
+   *  2. 数连续 failed 的次数（中途遇到 success/running/skipped/vetoed 就停）
+   *  3. consecutiveFailures >= 3 且错误指纹相同 → suggestAction='pause'
+   *  4. consecutiveFailures >= 3 但错误指纹不同 → suggestAction='investigate'
+   *  5. 否则（< 3）→ suggestAction='review'
+   */
+  getFailurePatterns(
+    scheduleId: string,
+    options: { since?: number; limit?: number } = {},
+  ): FailurePattern {
+    const limit = Math.min(Math.max(options.limit ?? 20, 1), 100)
+    const params: unknown[] = [scheduleId]
+    let whereExtra = ''
+    if (options.since !== undefined) {
+      whereExtra = 'AND started_at >= ?'
+      params.push(options.since)
+    }
+    params.push(limit)
+
+    const rows = this.db
+      .prepare(
+        `SELECT id, scheduled_at, started_at, finished_at, status, attempt, error
+         FROM schedule_runs
+         WHERE schedule_id = ? ${whereExtra}
+         ORDER BY started_at DESC, id DESC
+         LIMIT ?`,
+      )
+      .all(...params) as Array<Record<string, unknown>>
+
+    let consecutiveFailures = 0
+    let lastError: string | null = null
+    let lastFailedAt: number | null = null
+    let firstFailedAt: number | null = null
+    let sameErrorHash: string | null = null
+    const seenHashes = new Set<string>()
+
+    for (const r of rows) {
+      const status = r['status'] as RunStatus
+      if (status === 'failed') {
+        const err = (r['error'] as string | null) ?? null
+        const hash = this._errorFingerprint(err)
+        consecutiveFailures++
+        if (lastError === null) {
+          lastError = err
+          lastFailedAt = (r['started_at'] as number | null) ?? (r['scheduled_at'] as number)
+          sameErrorHash = hash
+          firstFailedAt = lastFailedAt
+        } else if (hash !== null) {
+          seenHashes.add(hash)
+        }
+      } else if (
+        status === 'success' ||
+        status === 'running' ||
+        status === 'skipped' ||
+        status === 'vetoed'
+      ) {
+        break
+      }
+    }
+
+    // 如果已见过的指纹集合里包含与 sameErrorHash 不同的值，说明错误不一致
+    if (sameErrorHash !== null && seenHashes.size > 0) {
+      const consistent = Array.from(seenHashes).every((h) => h === sameErrorHash)
+      if (!consistent) sameErrorHash = null
+    }
+
+    let suggestAction: FailurePattern['suggestAction']
+    if (consecutiveFailures >= 3) {
+      suggestAction = sameErrorHash !== null ? 'pause' : 'investigate'
+    } else {
+      suggestAction = 'review'
+    }
+
+    return {
+      consecutiveFailures,
+      sameErrorHash,
+      errorMessage: lastError,
+      firstFailedAt,
+      lastFailedAt,
+      suggestAction,
+    }
   }
 
   // ============================================================================

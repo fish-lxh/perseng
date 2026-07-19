@@ -205,6 +205,14 @@ interface ElectronAPI {
       limit?: number,
     ) => Promise<{ success: boolean; data: unknown; text: string; error?: string }>
     runNow: (id: string) => Promise<{ success: boolean; data: unknown; text: string; error?: string }>
+    // KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 9): 订阅 schedule.* 事件
+    onEvent: (
+      callback: (envelope: {
+        type: string
+        ts: number
+        payload?: Record<string, unknown>
+      }) => void,
+    ) => () => void
   }
   // Database Manager API（轻量只读版）
   dbManager: {
@@ -402,6 +410,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     delete: (id: string) => ipcRenderer.invoke('schedule:delete', { id }),
     history: (id: string, limit?: number) => ipcRenderer.invoke('schedule:history', { id, limit }),
     runNow: (id: string) => ipcRenderer.invoke('schedule:runNow', { id }),
+    // KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 9): 订阅 schedule.* 事件（主进程推送）
+    onEvent: (callback: (envelope: { type: string; ts: number; payload?: Record<string, unknown> }) => void) => {
+      const listener = (
+        _event: IpcRendererEvent,
+        envelope: { type: string; ts: number; payload?: Record<string, unknown> },
+      ) => {
+        callback(envelope)
+      }
+      ipcRenderer.on('schedule:event', listener)
+      return () => {
+        ipcRenderer.removeListener('schedule:event', listener)
+      }
+    },
   },
   // Database Manager API（扫描 ~/.perseng/ 下所有 db/json）
   dbManager: {

@@ -703,3 +703,90 @@ describe('validateScheduleConfig — dry_run', () => {
     expect(result.ok).toBe(true)
   })
 })
+
+// ============================================================================
+// KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 9): 失败模式识别
+// ============================================================================
+
+describe('失败模式识别 — failure_pattern_detected', () => {
+  it('连续 3 次相同错误 → emit failure_pattern_detected + suggestAction=pause', async () => {
+    stubHandler.mockRejectedValue(new Error('connection refused to api.example.com'))
+    makeSchedule({ id: 'fp-same', maxRetries: 0 })
+    store.setState('fp-same', 'active')
+
+    for (let i = 0; i < 3; i++) {
+      const next = new Date(Date.now() + 60_000).getTime()
+      ;(store as any).db
+        .prepare('UPDATE schedules SET next_run_at = ? WHERE id = ?')
+        .run(next, 'fp-same')
+      await engine.runScheduleNow('fp-same')
+    }
+
+    const patternEvents = captured.filter((e) => e['type'] === 'schedule.failure_pattern_detected')
+    expect(patternEvents.length).toBeGreaterThan(0)
+    const last = patternEvents[patternEvents.length - 1]!
+    const payload = last['payload'] as Record<string, unknown>
+    expect(payload['consecutive_failures']).toBe(3)
+    expect(payload['suggest_action']).toBe('pause')
+    expect(payload['same_error_hash']).not.toBeNull()
+    expect(payload['error_message']).toContain('connection refused')
+  })
+
+  it('连续 3 次不同错误 → suggestAction=investigate', async () => {
+    const errors = ['network timeout', 'rate limit exceeded', 'auth token expired']
+    makeSchedule({ id: 'fp-diff', maxRetries: 0 })
+    store.setState('fp-diff', 'active')
+
+    for (const err of errors) {
+      stubHandler.mockRejectedValueOnce(new Error(err))
+      const next = new Date(Date.now() + 60_000).getTime()
+      ;(store as any).db
+        .prepare('UPDATE schedules SET next_run_at = ? WHERE id = ?')
+        .run(next, 'fp-diff')
+      await engine.runScheduleNow('fp-diff')
+    }
+
+    const patternEvents = captured.filter((e) => e['type'] === 'schedule.failure_pattern_detected')
+    expect(patternEvents.length).toBeGreaterThan(0)
+    const last = patternEvents[patternEvents.length - 1]!
+    const payload = last['payload'] as Record<string, unknown>
+    expect(payload['consecutive_failures']).toBe(3)
+    expect(payload['suggest_action']).toBe('investigate')
+    expect(payload['same_error_hash']).toBeNull()
+  })
+
+  it('只失败 1 次 → 不 emit failure_pattern_detected（阈值 3）', async () => {
+    stubHandler.mockRejectedValueOnce(new Error('one off failure'))
+    makeSchedule({ id: 'fp-one', maxRetries: 0 })
+    store.setState('fp-one', 'active')
+    await engine.runScheduleNow('fp-one')
+
+    const patternEvents = captured.filter((e) => e['type'] === 'schedule.failure_pattern_detected')
+    expect(patternEvents).toHaveLength(0)
+  })
+
+  it('失败后成功 → consecutiveFailures 归零（success 中断连续段）', async () => {
+    stubHandler.mockRejectedValueOnce(new Error('fail'))
+    makeSchedule({ id: 'fp-recover', maxRetries: 0 })
+    store.setState('fp-recover', 'active')
+    await engine.runScheduleNow('fp-recover')
+
+    stubHandler.mockResolvedValueOnce({ content: [{ type: 'text', text: 'ok' }] })
+    const next = new Date(Date.now() + 60_000).getTime()
+    ;(store as any).db
+      .prepare('UPDATE schedules SET next_run_at = ? WHERE id = ?')
+      .run(next, 'fp-recover')
+    await engine.runScheduleNow('fp-recover')
+
+    const pattern = store.getFailurePatterns('fp-recover')
+    expect(pattern.consecutiveFailures).toBe(0)
+  })
+
+  it('store.getFailurePatterns 直接调用：无失败 → consecutiveFailures=0', () => {
+    makeSchedule({ id: 'fp-none', maxRetries: 0 })
+    const pattern = store.getFailurePatterns('fp-none')
+    expect(pattern.consecutiveFailures).toBe(0)
+    expect(pattern.suggestAction).toBe('review')
+    expect(pattern.sameErrorHash).toBeNull()
+  })
+})

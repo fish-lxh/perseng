@@ -26,6 +26,7 @@ import { registerLanguageIpc } from '~/main/ipc/languageIpc'
 import { registerLogsIpc } from '~/main/ipc/logsIpc'
 import { registerTimelineIpc } from '~/main/ipc/timelineIpc'
 import { registerScheduleIpc } from '~/main/ipc/scheduleIpc'
+import { registerScheduleEvents } from '~/main/ipc/scheduleEvents'
 import { registerDatabaseManagerIpc } from '~/main/ipc/databaseManagerIpc'
 import { registerDialogIpc } from '~/main/ipc/dialogIpc'
 import { registerShellIpc } from '~/main/ipc/shellIpc'
@@ -113,6 +114,8 @@ class PersengDesktopApp {
     this.setupWorkspaceIPC()
     registerTimelineIpc()
     registerScheduleIpc({ getServerPort: () => this.serverPort })
+    // KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 9): 订阅 schedule.* 事件推送
+    registerScheduleEvents({ getServerPort: () => this.serverPort })
     registerDatabaseManagerIpc()
 
     // Setup infrastructure

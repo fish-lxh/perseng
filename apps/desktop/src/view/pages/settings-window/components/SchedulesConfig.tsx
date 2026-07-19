@@ -140,6 +140,68 @@ export function SchedulesConfig() {
     loadSchedules()
   }, [loadSchedules])
 
+  // KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 9): 订阅 schedule.* 事件 → toast 告警
+  useEffect(() => {
+    const off = window.electronAPI?.schedule.onEvent?.((env) => {
+      const type = env?.type ?? ""
+      const payload = (env?.payload ?? {}) as {
+        schedule_id?: string
+        operation?: string
+        id?: string
+        name?: string
+        consecutive_failures?: number
+        suggest_action?: string
+        error_message?: string | null
+        reason?: string
+      }
+      const sid = payload.schedule_id ?? payload.id ?? ""
+      const name = payload.name ?? sid
+
+      switch (type) {
+        case "schedule.failed":
+          toast.error(`调度失败：${name}`, {
+            description: payload.error_message ?? undefined,
+          })
+          break
+        case "schedule.paused":
+          toast.warning(`调度已暂停：${name}`, {
+            description:
+              payload.reason === "auto"
+                ? `连续失败 ${(payload as Record<string, unknown>)["fail_count"] ?? "?"} 次，自动暂停`
+                : undefined,
+          })
+          break
+        case "schedule.failure_pattern_detected":
+          toast.warning(`检测到失败模式：${name}`, {
+            description: `连续失败 ${payload.consecutive_failures ?? "?"} 次，建议：${payload.suggest_action ?? "review"}`,
+            duration: 8000,
+          })
+          // 重新拉一次列表（failCount / lastStatus 可能已更新）
+          loadSchedules()
+          break
+        case "schedule.succeeded":
+          // 默认不弹（避免噪音），由 schedule.notifyOnSuccess 控制
+          break
+        case "schedule.retry_now":
+          toast.info(`手动重试：${name}`)
+          loadSchedules()
+          break
+        case "schedule.dry_run_failed":
+          toast.error(`dry_run 校验失败：${payload.reason ?? "unknown"}`)
+          break
+        case "schedule.parse_natural_language_failed":
+          toast.error(`自然语言解析失败：needsLLM=true`, { duration: 6000 })
+          break
+        default:
+          // 其它事件（triggered / retried / dry_run_passed 等）静默
+          break
+      }
+    })
+    return () => {
+      off?.()
+    }
+  }, [loadSchedules])
+
   // --------------------------------------------------------------------------
   // 操作
   // --------------------------------------------------------------------------
@@ -428,6 +490,14 @@ function ScheduleRow(props: {
           <span className="font-medium truncate">{s.name}</span>
           <StateBadge state={s.state} />
           {s.lastStatus && <StatusBadge status={s.lastStatus} small />}
+          {s.failCount >= 3 && (
+            <span
+              title={`连续失败 ${s.failCount} 次，建议暂停或检查`}
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-orange-500/20 text-orange-700 dark:text-orange-300"
+            >
+              ⚠ 失败模式
+            </span>
+          )}
         </div>
         <div className="mt-1 text-xs text-muted-foreground space-x-3">
           <span>

@@ -212,7 +212,15 @@ export class PersengMCPServer {
   getToolRegistry(): MapToolRegistry | undefined {
     return this.toolRegistry;
   }
-  
+
+  /**
+   * KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 9): 暴露 EventBus。
+   * 给 desktop 主进程订阅 schedule.* 事件用（IPC 推送给 settings-window）。
+   */
+  getEventBus(): ToolEventBus | null {
+    return this._eventBus
+  }
+
   // ========== 静态方法 ==========
   
   /**

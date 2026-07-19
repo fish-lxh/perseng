@@ -381,6 +381,28 @@ export class ScheduleEngine {
       })
     }
 
+    // KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 9): 失败模式识别
+    // 失败后分析最近 N 条 runs，emit failure_pattern_detected 触发 UI 告警
+    if (lastStatus === 'failed') {
+      try {
+        const pattern = this.store.getFailurePatterns(id, { limit: 20 })
+        if (pattern.consecutiveFailures >= 3) {
+          this._emit('schedule.failure_pattern_detected', id, {
+            consecutive_failures: pattern.consecutiveFailures,
+            same_error_hash: pattern.sameErrorHash,
+            error_message: pattern.errorMessage,
+            first_failed_at: pattern.firstFailedAt,
+            last_failed_at: pattern.lastFailedAt,
+            suggest_action: pattern.suggestAction,
+          })
+        }
+      } catch (e: any) {
+        logger.warn(
+          `[ScheduleEngine] getFailurePatterns failed for ${id}: ${e instanceof Error ? e.message : String(e)}`,
+        )
+      }
+    }
+
     if (lastRunId == null) {
       // 不该发生（循环至少跑一次）— 防御性返回 skipped
       return { skipped: true, reason: 'no_run_recorded' }

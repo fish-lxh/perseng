@@ -127,3 +127,23 @@ export interface ScheduleRunHistoryFilter {
   limit?: number
   since?: number
 }
+
+// ============================================================================
+// KNUTH-FEAT 2026-07-18 (Phase 3 / Commit 9): 失败模式识别
+// ============================================================================
+
+/** 失败模式分析结果 */
+export interface FailurePattern {
+  /** 连续失败次数（最近的 N 条全部 failed） */
+  consecutiveFailures: number
+  /** 错误指纹 — 相同错误会归为同一 fingerprint */
+  sameErrorHash: string | null
+  /** 失败原因原文（最近一次） */
+  errorMessage: string | null
+  /** 首次失败时间（连续段的起点） */
+  firstFailedAt: number | null
+  /** 最近失败时间 */
+  lastFailedAt: number | null
+  /** 建议动作 */
+  suggestAction: 'pause' | 'review' | 'investigate'
+}
