@@ -350,6 +350,8 @@ ${JSON.stringify(created, null, 2)}
               })
             }
             store.setState(String(args.id), 'paused')
+            // KNUTH-FIX 2026-07-19: 通知 ScheduleEngine 停 croner job
+            _scheduleEngine?.removeJob(String(args.id))
             emitSchedule(operation, args, { fromState: cur.state, toState: 'paused' })
             return outputAdapter.convertToMCPFormat({
               type: 'success',
@@ -384,6 +386,10 @@ ${JSON.stringify(created, null, 2)}
               })
             }
             store.setState(String(args.id), 'active')
+            // KNUTH-FIX 2026-07-19: 同步通知 ScheduleEngine 注册 croner job
+            // 否则 start() 之后新激活的 schedule 进不了 jobs Map → cron 永远不 fire
+            const updated = store.get(String(args.id))
+            if (updated) _scheduleEngine?.upsertJob(updated)
             emitSchedule(operation, args, { fromState: cur.state, toState: 'active' })
             return outputAdapter.convertToMCPFormat({
               type: 'success',
@@ -406,6 +412,8 @@ ${JSON.stringify(created, null, 2)}
               })
             }
             store.delete(String(args.id))
+            // KNUTH-FIX 2026-07-19: 通知 ScheduleEngine 停 croner job
+            _scheduleEngine?.removeJob(String(args.id))
             emitSchedule(operation, args, { fromState: cur.state, toState: 'deleted' })
             return outputAdapter.convertToMCPFormat({
               type: 'success',
