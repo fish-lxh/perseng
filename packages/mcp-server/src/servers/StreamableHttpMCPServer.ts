@@ -469,10 +469,25 @@ export class StreamableHttpMCPServer extends BaseMCPServer {
     this.logger.debug(`[TOOL_ARGS] ${name}: ${JSON.stringify(args)}`);
 
     try {
-      const result = await this.workerPool.execute(tool, args);
+      // KNUTH-FIX 2026-07-19: schedule tool 依赖进程内 _scheduleEngine 引用（run_now /
+      // retry_now / dry_run 三个 sub-op 直接调 engine 方法），但 WorkerpoolAdapter 用
+      // workerType: 'process'（见 WorkerpoolAdapter.ts:43），子进程里的 _scheduleEngine
+      // 是 null —— 主进程 PersengMCPServer._initScheduleEngine 注入的 engine 传不过去。
+      // 临时给 schedule 开"直通车"：主进程直跑 tool.handler，跳过 pool 隔离。
+      // schedule handler 内部只做 SQLite 读写 + cron 解析 + 同步触发目标工具，本来就不需要
+      // worker 隔离，绕过 pool 风险接近零。
+      let result: any
+      let responseTime: number
+      if (name === 'schedule') {
+        result = await tool.handler(args)
+        responseTime = Date.now() - startTime
+        this.logger.info(`[TOOL_EXEC_SUCCESS] Tool: ${name}, Time: ${responseTime}ms (direct, bypass workerpool)`)
+      } else {
+        result = await this.workerPool.execute(tool, args)
 
-      const responseTime = Date.now() - startTime;
-      this.logger.info(`[TOOL_EXEC_SUCCESS] Tool: ${name}, Time: ${responseTime}ms`);
+        responseTime = Date.now() - startTime
+        this.logger.info(`[TOOL_EXEC_SUCCESS] Tool: ${name}, Time: ${responseTime}ms`)
+      }
 
       // 更新指标
       this.metrics.requestCount++;
