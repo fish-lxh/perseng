@@ -30,8 +30,15 @@ abstract class ResourceProtocol {
   }
 
   abstract getProtocolInfo(): { name: string; description: string; [k: string]: unknown }
-  abstract resolvePath(resourcePath: string, queryParams: QueryParams): Promise<string>
-  abstract loadContent(resolvedPath: string, queryParams: QueryParams): Promise<string>
+  // KNUTH-FIX 2026-07-21: 基类不强制 abstract resolvePath/loadContent —
+  // 旧 .js 子类 (Role/Knowledge/Execution/...) 只实现自定义 resolve(),
+  // 不实现 resolvePath/loadContent。改成 throw stub 让子类按需 override。
+  resolvePath(_resourcePath: string, _queryParams: QueryParams): Promise<string> {
+    throw new Error('resolvePath must be implemented by subclass')
+  }
+  loadContent(_resolvedPath: string, _queryParams: QueryParams): Promise<string> {
+    throw new Error('loadContent must be implemented by subclass')
+  }
 
   validatePath(resourcePath: string): boolean {
     return typeof resourcePath === 'string' && resourcePath.length > 0
@@ -45,7 +52,7 @@ abstract class ResourceProtocol {
     }
   }
 
-  async resolve(resourcePath: string, queryParams: QueryParams): Promise<string> {
+  async resolve(resourcePath: string, queryParams: QueryParams): Promise<string | { content?: string; [k: string]: unknown }> {
     if (!this.validatePath(resourcePath)) {
       const error = new Error(`无效的资源路径: ${resourcePath}`)
       logErr(`[ResourceProtocol] 路径验证失败: ${resourcePath}`)
