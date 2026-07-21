@@ -25,11 +25,16 @@ abstract class BaseDiscovery {
     this.cache = new Map()
   }
 
-  abstract discover(): Promise<Array<{
+  // KNUTH-FIX 2026-07-21: 不强制 abstract discover — 旧 .js 子类
+// (FilePatternDiscovery.js) 没实现 discover(), 用 generateRegistry 替代。
+// 改成 throw stub 让子类按需 override。
+  discover(): Promise<Array<{
     id: string
     reference: string
     metadata: Record<string, unknown>
-  }>>
+  }>> {
+    throw new Error('discover() must be implemented by subclass')
+  }
 
   getDiscoveryInfo(): { source: string; priority: number; description: string } {
     return {

@@ -80,8 +80,9 @@ class ResourceData {
 
   /**
    * 生成默认名称
+   * KNUTH-FIX 2026-07-21: 改成 public — FilePatternDiscovery 需要跨文件调用
    */
-  private static _generateDefaultName(id: string, protocol: string): string {
+  public static _generateDefaultName(id: string, protocol: string): string {
     const nameMap: Record<string, string> = {
       role: '角色',
       thought: '思维模式',
@@ -99,8 +100,9 @@ class ResourceData {
 
   /**
    * 生成默认描述
+   * KNUTH-FIX 2026-07-21: 改成 public — FilePatternDiscovery 需要跨文件调用
    */
-  private static _generateDefaultDescription(_id: string, protocol: string): string {
+  public static _generateDefaultDescription(_id: string, protocol: string): string {
     const descMap: Record<string, string> = {
       role: '专业角色，提供特定领域的专业能力',
       thought: '思维模式，指导AI的思考方式',
