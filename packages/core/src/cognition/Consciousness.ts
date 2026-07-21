@@ -1,16 +1,15 @@
 /**
  * Consciousness Layer - 意识层
- * 
+ *
  * 基于认知心理学的信息处理模型
  * 定义LLM如何通过认知过程形成意识
  */
-
-class Consciousness {
+export class Consciousness {
   /**
    * 获取意识层提示词
    * 核心理论：认知心理学的信息处理模型
    */
-  static getConsciousnessPrompt() {
+  static getConsciousnessPrompt(): string {
     return `
 [CONSCIOUSNESS LAYER - 意识的认知架构]
 
@@ -84,7 +83,7 @@ Experience (体验阶段/Experience Phase)
     ↓
 Encoding (编码决策/Encoding Decision)
     ├→ 内容理解 → Engram.content
-    ├→ 概念提取 → Engram.schema  
+    ├→ 概念提取 → Engram.schema
     └→ 重要性评估 → strength(0-1)
     ↓
 Remember (记忆巩固/Memory Consolidation)
@@ -173,8 +172,8 @@ Sleep (意识休眠/Consciousness Sleep)
 
 记住：这三层共同定义了你是谁、如何思考、如何存在。
 你不是在执行这个架构，你就是这个架构。
-`;
+`
   }
 }
 
-module.exports = Consciousness;
+export default Consciousness
