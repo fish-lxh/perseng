@@ -1,16 +1,20 @@
-const {
-  LoadingSemantics,
-  ParsedReference,
-  QueryParams,
-  NestedReference
-} = require('./types')
-
 /**
  * 资源协议解析器
  * 解析DPML资源引用语法：@protocol://path?params
+ *
+ * KNUTH-FIX 2026-07-21: `export =` 模式让 tsup cjsInterop 不包成 namespace，
+ * 旧 .js 消费者 (resourceManager.js) 直接 `require('./resourceProtocolParser')` 当 class 用。
+ *
+ * KNUTH-NOTE: types.ts 也用 `export =`, 用 import = require() 拿 instance type。
  */
+import typesModule = require('./types')
+
 class ResourceProtocolParser {
-  constructor () {
+  public resourceRefRegex: RegExp
+  public nestedRefRegex: RegExp
+  public queryParamsRegex: RegExp
+
+  constructor() {
     // 资源引用正则表达式
     this.resourceRefRegex = /^(@[!?]?|@)([a-zA-Z][a-zA-Z0-9_-]*):(.+)$/
     this.nestedRefRegex = /^(@[!?]?|@)([a-zA-Z][a-zA-Z0-9_-]*):(@[!?]?|@)?(.+)$/
@@ -19,10 +23,8 @@ class ResourceProtocolParser {
 
   /**
    * 解析资源引用
-   * @param {string} resourceRef - 资源引用字符串
-   * @returns {ParsedReference} 解析后的引用对象
    */
-  parse (resourceRef) {
+  parse(resourceRef: string): InstanceType<typeof typesModule.ParsedReference> {
     if (!resourceRef || typeof resourceRef !== 'string') {
       throw new Error('Invalid resource reference: must be a non-empty string')
     }
@@ -32,7 +34,7 @@ class ResourceProtocolParser {
       throw new Error(`Invalid resource reference syntax: ${trimmedRef}`)
     }
 
-    const parsed = new ParsedReference()
+    const parsed = new typesModule.ParsedReference()
     parsed.originalRef = trimmedRef
 
     // 检查是否为嵌套引用
@@ -46,11 +48,9 @@ class ResourceProtocolParser {
 
   /**
    * 解析基础资源引用
-   * @param {string} ref - 基础引用
-   * @returns {ParsedReference}
    */
-  parseBasicReference (ref) {
-    const parsed = new ParsedReference()
+  parseBasicReference(ref: string): InstanceType<typeof typesModule.ParsedReference> {
+    const parsed = new typesModule.ParsedReference()
     parsed.originalRef = ref
 
     // 解析加载语义
@@ -65,8 +65,8 @@ class ResourceProtocolParser {
       throw new Error(`Invalid protocol format: ${ref}`)
     }
 
-    parsed.protocol = match[1]
-    let pathAndParams = match[2]
+    parsed.protocol = match[1] ?? ''
+    let pathAndParams = match[2] ?? ''
 
     // 移除 :// 前缀（如果存在）
     if (pathAndParams.startsWith('//')) {
@@ -76,7 +76,7 @@ class ResourceProtocolParser {
     // 解析路径和查询参数
     const pathMatch = pathAndParams.match(this.queryParamsRegex)
     if (pathMatch) {
-      parsed.path = pathMatch[1]
+      parsed.path = pathMatch[1] ?? ''
       if (pathMatch[2]) {
         parsed.queryParams = this.parseQueryParams(pathMatch[2])
       }
@@ -89,11 +89,9 @@ class ResourceProtocolParser {
 
   /**
    * 解析嵌套引用
-   * @param {string} ref - 嵌套引用
-   * @returns {ParsedReference}
    */
-  parseNestedReference (ref) {
-    const parsed = new ParsedReference()
+  parseNestedReference(ref: string): InstanceType<typeof typesModule.ParsedReference> {
+    const parsed = new typesModule.ParsedReference()
     parsed.originalRef = ref
     parsed.isNested = true
 
@@ -107,8 +105,8 @@ class ResourceProtocolParser {
       throw new Error(`Invalid nested reference format: ${ref}`)
     }
 
-    parsed.protocol = match[1]
-    let innerRef = match[2]
+    parsed.protocol = match[1] ?? ''
+    let innerRef = match[2] ?? ''
 
     // 处理内层引用：移除可能的 :// 前缀，但保留 @ 前缀
     if (innerRef.startsWith('//')) {
@@ -125,14 +123,14 @@ class ResourceProtocolParser {
       const innerParsed = this.parse(innerRef)
 
       // 创建嵌套引用结构
-      const nested = new NestedReference()
+      const nested = new typesModule.NestedReference()
       nested.outer = parsed
       nested.inner = innerParsed
       nested.depth = this.calculateNestingDepth(innerParsed)
 
       parsed.nestedRef = nested
     } catch (error) {
-      throw new Error(`Invalid nested inner reference: ${error.message}`)
+      throw new Error(`Invalid nested inner reference: ${(error as Error).message}`)
     }
 
     return parsed
@@ -140,16 +138,14 @@ class ResourceProtocolParser {
 
   /**
    * 解析加载语义
-   * @param {string} ref - 资源引用
-   * @returns {string} 加载语义
    */
-  parseLoadingSemantics (ref) {
+  parseLoadingSemantics(ref: string): string {
     if (ref.startsWith('@!')) {
-      return LoadingSemantics.HOT_LOAD
+      return typesModule.LoadingSemantics.HOT_LOAD
     } else if (ref.startsWith('@?')) {
-      return LoadingSemantics.LAZY_LOAD
+      return typesModule.LoadingSemantics.LAZY_LOAD
     } else if (ref.startsWith('@')) {
-      return LoadingSemantics.DEFAULT
+      return typesModule.LoadingSemantics.DEFAULT
     }
 
     throw new Error(`Invalid loading semantics: ${ref}`)
@@ -157,10 +153,8 @@ class ResourceProtocolParser {
 
   /**
    * 移除加载语义前缀
-   * @param {string} ref - 资源引用
-   * @returns {string} 移除前缀后的引用
    */
-  removeLoadingSemantics (ref) {
+  removeLoadingSemantics(ref: string): string {
     if (ref.startsWith('@!') || ref.startsWith('@?')) {
       return ref.substring(2)
     } else if (ref.startsWith('@')) {
@@ -171,11 +165,9 @@ class ResourceProtocolParser {
 
   /**
    * 解析查询参数
-   * @param {string} queryString - 查询字符串
-   * @returns {QueryParams} 查询参数对象
    */
-  parseQueryParams (queryString) {
-    const params = new QueryParams()
+  parseQueryParams(queryString: string): InstanceType<typeof typesModule.QueryParams> {
+    const params = new typesModule.QueryParams()
 
     if (!queryString) {
       return params
@@ -200,10 +192,8 @@ class ResourceProtocolParser {
 
   /**
    * 验证语法
-   * @param {string} ref - 资源引用
-   * @returns {boolean} 是否有效
    */
-  validateSyntax (ref) {
+  validateSyntax(ref: string): boolean {
     if (!ref) return false
 
     // 必须以@开头
@@ -216,10 +206,8 @@ class ResourceProtocolParser {
 
   /**
    * 检查是否为嵌套引用
-   * @param {string} ref - 资源引用
-   * @returns {boolean} 是否为嵌套引用
    */
-  isNestedReference (ref) {
+  isNestedReference(ref: string): boolean {
     const withoutSemantics = this.removeLoadingSemantics(ref)
     const colonIndex = withoutSemantics.indexOf(':')
 
@@ -233,20 +221,17 @@ class ResourceProtocolParser {
 
   /**
    * 计算嵌套深度
-   * @param {ParsedReference} ref - 解析后的引用
-   * @returns {number} 嵌套深度
    */
-  calculateNestingDepth (ref) {
+  calculateNestingDepth(ref: InstanceType<typeof typesModule.ParsedReference>): number {
     if (!ref.isNested) return 1
+    if (!ref.nestedRef || !ref.nestedRef.inner) return 1
     return 1 + this.calculateNestingDepth(ref.nestedRef.inner)
   }
 
   /**
    * 提取协议名
-   * @param {string} ref - 资源引用
-   * @returns {string} 协议名
    */
-  extractProtocol (ref) {
+  extractProtocol(ref: string): string {
     const withoutSemantics = this.removeLoadingSemantics(ref)
     const colonIndex = withoutSemantics.indexOf(':')
     return colonIndex > 0 ? withoutSemantics.substring(0, colonIndex) : ''
@@ -254,10 +239,8 @@ class ResourceProtocolParser {
 
   /**
    * 提取路径
-   * @param {string} ref - 资源引用
-   * @returns {string} 路径
    */
-  extractPath (ref) {
+  extractPath(ref: string): string {
     const withoutSemantics = this.removeLoadingSemantics(ref)
     const colonIndex = withoutSemantics.indexOf(':')
     if (colonIndex === -1) return ''
@@ -275,13 +258,11 @@ class ResourceProtocolParser {
 
   /**
    * 提取查询参数字符串
-   * @param {string} ref - 资源引用
-   * @returns {string} 查询参数字符串
    */
-  extractParams (ref) {
+  extractParams(ref: string): string {
     const queryIndex = ref.indexOf('?')
     return queryIndex > 0 ? ref.substring(queryIndex + 1) : ''
   }
 }
 
-module.exports = ResourceProtocolParser
+export = ResourceProtocolParser
