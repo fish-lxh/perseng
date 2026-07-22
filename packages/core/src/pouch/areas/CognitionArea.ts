@@ -22,8 +22,17 @@ import * as logger from '@promptx/logger'
 import { BaseArea } from './BaseArea.js'
 
 // KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — CognitivePrompts 真实 .d.ts 已生成, 静态方法全部具名类型。
+// KNUTH-FIX 2026-07-22: CognitivePrompts 双导出 (class + default)，tsup cjsInterop
+// 把整个 exports 对象包成 `{ CognitivePrompts, default }`，需要解构具名导出才能拿到 class。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const CognitivePrompts = require('../../cognition/CognitivePrompts')
+const { CognitivePrompts } = require('../../cognition/CognitivePrompts') as {
+  CognitivePrompts: {
+    getPrimeGuideHint(): string
+    getRecallFoundHint(): string
+    getRememberSuccessHint(): string
+    getRecallEmptyHint(roleId: string): string
+  }
+}
 
 /** 记忆片段（engram） */
 export interface Engram {

@@ -19,8 +19,12 @@ const { getGlobalResourceManager } = require('../../resource') as {
   getGlobalResourceManager(): ResourceManagerLike
 }
 // KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — CognitionManager 真实 .d.ts 已生成。
+// KNUTH-FIX 2026-07-22: CognitionManager 双导出 (class + default)，tsup cjsInterop
+// 把整个 exports 对象包成 `{ CognitionManager, default }`，需要解构具名导出才能拿到 class。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const CognitionManager = require('../../cognition/CognitionManager')
+const { CognitionManager } = require('../../cognition/CognitionManager') as {
+  CognitionManager: CognitionManagerLike
+}
 
 /** ResourceManager 鸭子类型 */
 interface ResourceManagerLike {

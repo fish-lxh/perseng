@@ -25,8 +25,12 @@ import type { BaseLayerMetadata } from './BaseLayer.js'
 import * as logger from '@promptx/logger'
 
 // KNUTH-FEAT 2026-07-11: Phase 3 cast 清理 — Consciousness 真实 .d.ts 已生成, 直接取静态方法。
+// KNUTH-FIX 2026-07-22: Consciousness 双导出 (class + default)，tsup cjsInterop
+// 把整个 exports 对象包成 `{ Consciousness, default }`，需要解构具名导出才能拿到 class。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const Consciousness = require('../../cognition/Consciousness')
+const { Consciousness } = require('../../cognition/Consciousness') as {
+  Consciousness: { getConsciousnessPrompt(): string }
+}
 
 /** 注入模式 */
 export type InjectionMode = 'guided' | 'first-person' | 'comment' | 'visible' | 'none'
