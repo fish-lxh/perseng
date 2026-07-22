@@ -110,6 +110,19 @@ A V2 role must be activated first via the \`action\` tool before using lifecycle
     },
     handler: async (args: Record<string, any>) => {
       const operation = args.operation;
+      // KNUTH-FIX 2026-07-22: operation 必填校验 — V2 路径缺少 operation 字段时
+      // 会透传到 RolexActionDispatcher.dispatch 落到 default 分支抛
+      // "Unknown RoleX operation: undefined"，错误信息对客户端无参考价值。
+      // 这里一次性校验，给出可用 operation 列表 + V1/V2 区分。
+      if (!operation || typeof operation !== 'string') {
+        const allowedOps = ['want', 'plan', 'todo', 'finish', 'achieve', 'abandon', 'focus']
+        throw new Error(
+          `lifecycle 工具必须传 \`operation\` 字段。当前值: ${JSON.stringify(operation)}\n\n` +
+          `可用 operations: ${allowedOps.join(', ')}\n\n` +
+          `示例: {"operation": "want", "name": "my-goal", "source": "Feature: ..."}`,
+        )
+      }
+
       const core = await import('@promptx/core');
       const coreExports = core.default || core;
 

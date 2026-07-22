@@ -107,6 +107,23 @@ export class RolexActionDispatcher {
   async dispatch(operation: DispatchOperation, args: DispatchArgs = {}): Promise<unknown> {
     logger.info(`[RolexActionDispatcher] Dispatching: ${operation}`)
 
+    // KNUTH-FIX 2026-07-22: 防御性校验 — 若上游 mcp-server handler 漏传 operation，
+    // 旧的 default 分支会吐 "Unknown RoleX operation: undefined"，对 AI 客户端无参考价值。
+    const KNOWN_OPERATIONS = new Set<DispatchOperation>([
+      'activate', 'born', 'identity', 'want', 'plan', 'todo', 'finish', 'achieve',
+      'abandon', 'focus', 'synthesize', 'growup', 'found', 'establish', 'hire', 'fire',
+      'appoint', 'dismiss', 'directory', 'reflect', 'realize', 'master', 'forget',
+      'skill', 'retire', 'die', 'rehire', 'train', 'charter', 'dissolve',
+      'charge', 'require', 'abolish', 'archive', 'unarchive', 'delete',
+    ])
+    if (!operation || !KNOWN_OPERATIONS.has(operation)) {
+      const available = Array.from(KNOWN_OPERATIONS).sort().join(', ')
+      throw new Error(
+        `Unknown RoleX operation: ${JSON.stringify(operation)}. ` +
+        `Available operations: ${available}`,
+      )
+    }
+
     switch (operation) {
       case 'activate':
         return this.activateOp(args)
